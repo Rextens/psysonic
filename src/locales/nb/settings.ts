@@ -259,6 +259,7 @@ export const settings = {
   libraryIndexExcludingServer: 'Ekskluderer…',
   libraryIndexExcludedTitle: 'Ekskludert fra synkronisering',
   libraryIndexIncludeServer: 'Inkluder igjen',
+  libraryIndexIncludingServer: 'Inkluderer…',
   libraryIndexStatus: 'Status',
   libraryIndexStatusIdle: 'Inaktiv',
   libraryIndexStatusProbing: 'Sjekker server…',

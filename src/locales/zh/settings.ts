@@ -259,6 +259,7 @@ export const settings = {
   libraryIndexExcludingServer: '正在排除…',
   libraryIndexExcludedTitle: '已排除同步',
   libraryIndexIncludeServer: '重新纳入',
+  libraryIndexIncludingServer: '正在纳入…',
   libraryIndexStatus: '状态',
   libraryIndexStatusIdle: '空闲',
   libraryIndexStatusProbing: '正在检查服务器…',

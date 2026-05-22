@@ -264,6 +264,7 @@ export const settings = {
   libraryIndexExcludingServer: 'Wird ausgeschlossen…',
   libraryIndexExcludedTitle: 'Von Synchronisation ausgeschlossen',
   libraryIndexIncludeServer: 'Wieder einschließen',
+  libraryIndexIncludingServer: 'Wird eingeschlossen…',
   libraryIndexStatus: 'Status',
   libraryIndexStatusIdle: 'Bereit',
   libraryIndexStatusProbing: 'Server wird geprüft…',

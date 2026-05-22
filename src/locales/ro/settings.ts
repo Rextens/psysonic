@@ -266,6 +266,7 @@ export const settings = {
   libraryIndexExcludingServer: 'Se exclude…',
   libraryIndexExcludedTitle: 'Excluse din sincronizare',
   libraryIndexIncludeServer: 'Include din nou',
+  libraryIndexIncludingServer: 'Se include…',
   libraryIndexStatus: 'Stare',
   libraryIndexStatusIdle: 'Inactiv',
   libraryIndexStatusProbing: 'Se verifică serverul…',

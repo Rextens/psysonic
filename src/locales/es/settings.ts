@@ -262,6 +262,7 @@ export const settings = {
   libraryIndexExcludingServer: 'Excluyendo…',
   libraryIndexExcludedTitle: 'Excluidos de la sincronización',
   libraryIndexIncludeServer: 'Incluir de nuevo',
+  libraryIndexIncludingServer: 'Incluyendo…',
   libraryIndexStatus: 'Estado',
   libraryIndexStatusIdle: 'Inactivo',
   libraryIndexStatusProbing: 'Comprobando servidor…',

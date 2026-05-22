@@ -260,6 +260,7 @@ export const settings = {
   libraryIndexExcludingServer: 'Uitsluiten…',
   libraryIndexExcludedTitle: 'Uitgesloten van synchronisatie',
   libraryIndexIncludeServer: 'Weer opnemen',
+  libraryIndexIncludingServer: 'Opnemen…',
   libraryIndexStatus: 'Status',
   libraryIndexStatusIdle: 'Inactief',
   libraryIndexStatusProbing: 'Server controleren…',

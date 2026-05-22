@@ -60,6 +60,7 @@ export default function LibraryIndexSection() {
   const [progressByServer, setProgressByServer] = useState<Record<string, string | null>>({});
   const [busyServerId, setBusyServerId] = useState<string | null>(null);
   const [excludingServerId, setExcludingServerId] = useState<string | null>(null);
+  const [includingServerId, setIncludingServerId] = useState<string | null>(null);
   const [bootstrapping, setBootstrapping] = useState(false);
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -133,6 +134,7 @@ export default function LibraryIndexSection() {
       setProgressByServer({});
       setBusyServerId(null);
       setExcludingServerId(null);
+      setIncludingServerId(null);
       return;
     }
     void runBootstrap();
@@ -251,22 +253,38 @@ export default function LibraryIndexSection() {
   };
 
   const handleIncludeServer = async (serverId: string) => {
-    setServerSyncExcluded(serverId, false);
+    if (includingServerId || excludingServerId) return;
     const srv = servers.find(s => s.id === serverId);
-    if (srv) {
-      setBootstrapping(true);
-      try {
-        const result = await bootstrapIndexedServer(srv);
-        applyConnectionResults({ [serverId]: result });
-        await refreshAllStatuses();
-      } finally {
-        setBootstrapping(false);
+    if (!srv) return;
+    flushSync(() => {
+      setIncludingServerId(serverId);
+      setServerSyncExcluded(serverId, false);
+    });
+    try {
+      const result = await bootstrapIndexedServer(srv);
+      applyConnectionResults({ [serverId]: result });
+      if (result === 'error') {
+        setServerSyncExcluded(serverId, true);
+        showToast(t('settings.libraryIndexBindError', { error: t('settings.libraryIndexStatusError') }), 5000, 'error');
+        return;
       }
+      try {
+        const fresh = await libraryGetStatus(serverId);
+        syncPhaseRef.current[serverId] = fresh.syncPhase;
+        setStatusByServer(prev => ({ ...prev, [serverId]: fresh }));
+      } catch {
+        /* status poll is best-effort */
+      }
+    } catch (e) {
+      setServerSyncExcluded(serverId, true);
+      showToast(t('settings.libraryIndexBindError', { error: String(e) }), 5000, 'error');
+    } finally {
+      setIncludingServerId(null);
     }
   };
 
   const handleExcludeServer = async (serverId: string) => {
-    if (excludingServerId) return;
+    if (excludingServerId || includingServerId) return;
     flushSync(() => setExcludingServerId(serverId));
     try {
       const syncing =
@@ -316,7 +334,8 @@ export default function LibraryIndexSection() {
     }
   };
 
-  const globalBusy = bootstrapping || busyServerId != null || excludingServerId != null;
+  const globalBusy =
+    bootstrapping || busyServerId != null || excludingServerId != null || includingServerId != null;
 
   return (
     <SettingsSubSection
@@ -344,7 +363,7 @@ export default function LibraryIndexSection() {
             <input
               type="checkbox"
               checked={masterEnabled}
-              disabled={servers.length === 0 || bootstrapping}
+              disabled={servers.length === 0 || bootstrapping || includingServerId != null || excludingServerId != null}
               onChange={e => void handleMasterToggle(e.target.checked)}
             />
             <span className="toggle-track" />
@@ -373,9 +392,12 @@ export default function LibraryIndexSection() {
                     connection={connectionByServer[srv.id] ?? 'unknown'}
                     progressLabel={progressByServer[srv.id] ?? null}
                     busy={busyServerId === srv.id}
+                    including={includingServerId === srv.id}
                     excluding={excludingServerId === srv.id}
                     actionsDisabled={
-                      (globalBusy && busyServerId !== srv.id) || excludingServerId != null
+                      (globalBusy && busyServerId !== srv.id)
+                      || excludingServerId != null
+                      || includingServerId != null
                     }
                     onFullSync={() => void runServerAction(srv.id, 'full')}
                     onDeltaSync={() => void runServerAction(srv.id, 'delta')}
@@ -403,10 +425,15 @@ export default function LibraryIndexSection() {
                         type="button"
                         className="btn btn-surface"
                         style={{ fontSize: 12, padding: '4px 10px' }}
-                        disabled={bootstrapping || excludingServerId != null}
+                        disabled={
+                          includingServerId != null || excludingServerId != null
+                        }
+                        aria-busy={includingServerId === srv.id}
                         onClick={() => void handleIncludeServer(srv.id)}
                       >
-                        {t('settings.libraryIndexIncludeServer')}
+                        {includingServerId === srv.id
+                          ? t('settings.libraryIndexIncludingServer')
+                          : t('settings.libraryIndexIncludeServer')}
                       </button>
                     </div>
                   ))}

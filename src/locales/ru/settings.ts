@@ -272,6 +272,7 @@ export const settings = {
   libraryIndexExcludingServer: 'Отключается…',
   libraryIndexExcludedTitle: 'Исключены из синхронизации',
   libraryIndexIncludeServer: 'Включить снова',
+  libraryIndexIncludingServer: 'Подключается…',
   libraryIndexStatus: 'Статус',
   libraryIndexStatusIdle: 'Ожидание',
   libraryIndexStatusProbing: 'Проверка сервера…',

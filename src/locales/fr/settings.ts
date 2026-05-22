@@ -260,6 +260,7 @@ export const settings = {
   libraryIndexExcludingServer: 'Exclusion…',
   libraryIndexExcludedTitle: 'Exclus de la synchronisation',
   libraryIndexIncludeServer: 'Réinclure',
+  libraryIndexIncludingServer: 'Réinclusion…',
   libraryIndexStatus: 'État',
   libraryIndexStatusIdle: 'Inactif',
   libraryIndexStatusProbing: 'Vérification du serveur…',
