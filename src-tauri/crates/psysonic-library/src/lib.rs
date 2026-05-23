@@ -9,11 +9,14 @@
 
 pub(crate) mod bulk_ingest;
 pub mod advanced_search;
+mod advanced_search_mood;
 pub mod canonical;
 pub mod commands;
 pub mod cross_server;
 pub mod dto;
+pub mod enrichment;
 pub mod filter;
+pub mod mood_groups;
 pub mod live_search;
 pub mod payload;
 pub mod repos;

@@ -39,6 +39,20 @@ pub struct TrackKey {
     pub md5_16kb: String,
 }
 
+/// Waveform / loudness rows present for a specific content fingerprint
+/// (`md5_16kb`), after track-id variant + legacy server fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContentCacheCoverage {
+    pub has_waveform: bool,
+    pub has_loudness: bool,
+}
+
+impl ContentCacheCoverage {
+    pub fn complete(self) -> bool {
+        self.has_waveform && self.has_loudness
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct WaveformEntry {
     pub bins: Vec<u8>,
@@ -306,6 +320,59 @@ impl AnalysisCache {
         Ok(row.filter(|e| waveform_cache_blob_len_ok(&e.bins, e.bin_count)))
     }
 
+    /// Lookup waveform + loudness for an exact content fingerprint, trying bare /
+    /// `stream:` track-id variants and the legacy `''` server pool (with lazy
+    /// re-tag onto `server_id` when a legacy hit occurs).
+    pub fn content_cache_coverage(
+        &self,
+        server_id: &str,
+        track_id: &str,
+        md5_16kb: &str,
+    ) -> Result<ContentCacheCoverage, String> {
+        let mut has_waveform = false;
+        let mut has_loudness = false;
+        let mut relabel = false;
+        for tid in track_id_cache_variants(track_id) {
+            if !server_id.is_empty() {
+                let key = TrackKey {
+                    server_id: server_id.to_string(),
+                    track_id: tid.clone(),
+                    md5_16kb: md5_16kb.to_string(),
+                };
+                if self.get_waveform(&key)?.is_some() {
+                    has_waveform = true;
+                }
+                if self.loudness_row_exists_for_key(&key)? {
+                    has_loudness = true;
+                }
+            }
+            let legacy = TrackKey {
+                server_id: String::new(),
+                track_id: tid,
+                md5_16kb: md5_16kb.to_string(),
+            };
+            if self.get_waveform(&legacy)?.is_some() {
+                has_waveform = true;
+                if !server_id.is_empty() {
+                    relabel = true;
+                }
+            }
+            if self.loudness_row_exists_for_key(&legacy)? {
+                has_loudness = true;
+                if !server_id.is_empty() {
+                    relabel = true;
+                }
+            }
+        }
+        if relabel {
+            let _ = self.relabel_legacy_to_server(server_id, track_id);
+        }
+        Ok(ContentCacheCoverage {
+            has_waveform,
+            has_loudness,
+        })
+    }
+
     /// True when this exact `(track_id, md5_16kb)` has a loudness row for the current algo version.
     /// Used after `delete_loudness_for_track_id`: waveform may still be cached, but EBU data was removed.
     pub fn loudness_row_exists_for_key(&self, key: &TrackKey) -> Result<bool, String> {
@@ -351,6 +418,25 @@ impl AnalysisCache {
             if let Some(e) = query_latest_waveform_scoped(&conn, "", track_id)? {
                 let _ = relabel_legacy_to_server(&conn, server_id, track_id);
                 return Ok(Some(e));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Latest `md5_16kb` fingerprint for `(server_id, track_id)` with legacy fallback.
+    pub fn get_latest_md5_16kb_for_track(
+        &self,
+        server_id: &str,
+        track_id: &str,
+    ) -> Result<Option<String>, String> {
+        let conn = self.conn.lock().map_err(|_| "analysis_cache lock poisoned".to_string())?;
+        if let Some(md5) = query_latest_md5_16kb_scoped(&conn, server_id, track_id)? {
+            return Ok(Some(md5));
+        }
+        if !server_id.is_empty() {
+            if let Some(md5) = query_latest_md5_16kb_scoped(&conn, "", track_id)? {
+                let _ = relabel_legacy_to_server(&conn, server_id, track_id);
+                return Ok(Some(md5));
             }
         }
         Ok(None)
@@ -439,6 +525,40 @@ fn query_latest_waveform_scoped(
         if let Some(e) = row {
             if waveform_cache_blob_len_ok(&e.bins, e.bin_count) {
                 return Ok(Some(e));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn query_latest_md5_16kb_scoped(
+    conn: &Connection,
+    server_id: &str,
+    track_id: &str,
+) -> Result<Option<String>, String> {
+    const SQL: &str = r#"
+        SELECT w.md5_16kb
+        FROM waveform_cache w
+        JOIN analysis_track a
+          ON a.server_id = w.server_id
+         AND a.track_id = w.track_id
+         AND a.md5_16kb = w.md5_16kb
+        WHERE w.server_id = ?1
+          AND w.track_id = ?2
+          AND a.waveform_algo_version = ?3
+        ORDER BY w.updated_at DESC
+        LIMIT 1
+        "#;
+    for tid in track_id_cache_variants(track_id) {
+        let row: Option<String> = conn
+            .query_row(SQL, params![server_id, tid, WAVEFORM_ALGO_VERSION], |row| {
+                row.get(0)
+            })
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if let Some(md5) = row {
+            if !md5.is_empty() {
+                return Ok(Some(md5));
             }
         }
     }
