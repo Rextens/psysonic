@@ -44,8 +44,10 @@ import ArtistDetailSimilarArtists from '../components/artistDetail/ArtistDetailS
 import ArtistCard from '../components/nowPlaying/ArtistCard';
 import LosslessModeBanner from '../components/LosslessModeBanner';
 import { usePerfProbeFlags } from '../utils/perf/perfFlags';
-import { albumGridWarmCovers } from '../cover/layoutSizes';
-import { rememberAlbumDistinctDiscCovers } from '../cover/ref';
+import { albumGridWarmCovers, COVER_DENSE_GRID_MIN_CELL_CSS_PX, GRID_COVER_WARM_LIMIT } from '../cover/layoutSizes';
+import { artistDetailCoverWarmAlbums } from '../components/artistDetail/topSongAlbumForCover';
+import { useLibraryCoverPrefetch } from '../cover/useLibraryCoverPrefetch';
+import { useWarmGridCovers } from '../hooks/useWarmGridCovers';
 import { VirtualCardGrid } from '../components/VirtualCardGrid';
 import { LOSSLESS_MODE_QUERY } from '../utils/library/losslessMode';
 import { sortArtistAlbumsByYear } from '../utils/library/sortArtistAlbums';
@@ -215,18 +217,26 @@ export default function ArtistDetail() {
     setHeaderCoverFailed(false);
   }, [coverId, coverRevision, id]);
 
-  useEffect(() => {
-    const byAlbum = new Map<string, SubsonicSong[]>();
-    for (const song of topSongs) {
-      const albumId = song.albumId?.trim();
-      if (!albumId) continue;
-      if (!byAlbum.has(albumId)) byAlbum.set(albumId, []);
-      byAlbum.get(albumId)!.push(song);
-    }
-    for (const [albumId, songs] of byAlbum) {
-      rememberAlbumDistinctDiscCovers(albumId, songs);
-    }
-  }, [topSongs]);
+  const artistCoverWarmAlbums = useMemo(
+    () => artistDetailCoverWarmAlbums(topSongs, albums, GRID_COVER_WARM_LIMIT),
+    [topSongs, albums],
+  );
+  useWarmGridCovers(artistCoverWarmAlbums, COVER_DENSE_GRID_MIN_CELL_CSS_PX, {
+    enabled: artistCoverWarmAlbums.length > 0,
+    limit: GRID_COVER_WARM_LIMIT,
+    surface: 'dense',
+  });
+  useLibraryCoverPrefetch(
+    [
+      {
+        albums: artistCoverWarmAlbums.slice(0, 24),
+        limit: 24,
+        priority: 'high',
+        surface: 'dense',
+      },
+    ],
+    [artistCoverWarmAlbums],
+  );
 
   if (loading) {
     return (
