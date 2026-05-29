@@ -29,6 +29,20 @@ import type {
 } from './albumBrowseTypes';
 import { GENRE_ALBUM_FETCH_LIMIT } from './albumBrowseTypes';
 
+/** One local-index chunk for lazy catalog loading (All Albums slice mode). */
+export async function fetchLocalAlbumCatalogChunk(
+  serverId: string,
+  query: AlbumBrowseQuery,
+  offset: number,
+  chunkSize: number,
+): Promise<AlbumBrowsePageResult | null> {
+  const limit = query.genres.length > 0 && offset === 0 ? GENRE_ALBUM_FETCH_LIMIT : chunkSize;
+  if (query.genres.length > 0 && offset > 0) {
+    return { albums: [], hasMore: false };
+  }
+  return runLocalAlbumBrowse(serverId, query, offset, limit);
+}
+
 /** Genres in albums matching all filters except genre (for combined-filter UI). */
 export async function fetchAlbumBrowseGenreOptions(
   serverId: string,

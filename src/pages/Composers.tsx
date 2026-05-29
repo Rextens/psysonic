@@ -17,6 +17,9 @@ import { usePerfProbeFlags } from '../utils/perf/perfFlags';
 import { VirtualCardGrid } from '../components/VirtualCardGrid';
 import OverlayScrollArea from '../components/OverlayScrollArea';
 import { useVirtualizerScrollMargin } from '../hooks/useVirtualizerScrollMargin';
+import { useClientSliceInfiniteScroll } from '../hooks/useClientSliceInfiniteScroll';
+import { useInpageScrollViewport } from '../hooks/useInpageScrollViewport';
+import InpageScrollSentinel from '../components/InpageScrollSentinel';
 
 const ALL_SENTINEL = 'ALL';
 const ALPHABET = [ALL_SENTINEL, '#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
@@ -80,15 +83,12 @@ export default function Composers() {
 
   // Compact tiles + initial-letter only → 200 per page is comfortable.
   const PAGE_SIZE = 200;
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const observerTarget = useRef<HTMLDivElement>(null);
-  const scrollBodyRef = useRef<HTMLDivElement | null>(null);
-  const [scrollBodyEl, setScrollBodyEl] = useState<HTMLDivElement | null>(null);
-  const bindComposersScrollBody = useCallback((el: HTMLDivElement | null) => {
-    scrollBodyRef.current = el;
-    setScrollBodyEl(el);
-  }, []);
+  const {
+    scrollBodyRef,
+    scrollBodyEl,
+    bindScrollBody: bindComposersScrollBody,
+    getScrollRoot,
+  } = useInpageScrollViewport();
   const navigate = useNavigate();
   const openContextMenu = usePlayerStore(state => state.openContextMenu);
   const musicLibraryFilterVersion = useAuthStore(s => s.musicLibraryFilterVersion);
@@ -101,6 +101,17 @@ export default function Composers() {
     'composers_browse',
   );
   const composerSource = textSearchArtists ?? composers;
+
+  const {
+    visibleCount,
+    loadingMore,
+    bindSentinel,
+  } = useClientSliceInfiniteScroll({
+    pageSize: PAGE_SIZE,
+    resetDeps: [letterFilter, effectiveFilter, starredOnly, viewMode, composerSource],
+    getScrollRoot,
+    scrollRootEl: scrollBodyEl,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -130,17 +141,6 @@ export default function Composers() {
     return () => { cancelled = true; };
   }, [musicLibraryFilterVersion, reloadTick]);
 
-  const loadMore = useCallback(() => {
-    if (loadingMore) return;
-    setLoadingMore(true);
-    setVisibleCount(prev => prev + PAGE_SIZE);
-    setTimeout(() => setLoadingMore(false), 100);
-  }, [loadingMore, PAGE_SIZE]);
-
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [filter, letterFilter, starredOnly, viewMode, PAGE_SIZE]);
-
   const starredOverrides = usePlayerStore(s => s.starredOverrides);
   const filtered = useMemo(() => {
     let out = composerSource;
@@ -164,21 +164,6 @@ export default function Composers() {
 
   const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
   const hasMore = visibleCount < filtered.length;
-
-  useEffect(() => {
-    const node = observerTarget.current;
-    if (!node) return;
-    const root = scrollBodyRef.current;
-    const observer = new IntersectionObserver(
-      entries => { if (entries[0]?.isIntersecting) loadMore(); },
-      {
-        root: root instanceof HTMLElement ? root : null,
-        rootMargin: '200px',
-      },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [loadMore, hasMore, scrollBodyEl]);
 
   const { groups, letters } = useMemo(() => {
     if (viewMode !== 'list') return { groups: {} as Record<string, SubsonicArtist[]>, letters: [] as string[] };
@@ -481,9 +466,7 @@ export default function Composers() {
         )}
 
         {!loading && hasMore && (
-          <div ref={observerTarget} style={{ height: '20px', margin: '2rem 0', display: 'flex', justifyContent: 'center' }}>
-            {loadingMore && <div className="spinner" style={{ width: 20, height: 20 }} />}
-          </div>
+          <InpageScrollSentinel bindSentinel={bindSentinel} loading={loadingMore} />
         )}
 
         {!loading && filtered.length === 0 && (

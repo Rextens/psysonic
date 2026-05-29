@@ -26,6 +26,8 @@ import FilterQuickClear from '../components/FilterQuickClear';
 import { usePerfProbeFlags } from '../utils/perf/perfFlags';
 import { useRangeSelection } from '../hooks/useRangeSelection';
 import { useMainstageInpageHeaderTight } from '../hooks/useMainstageInpageHeaderTight';
+import { useInpageScrollViewport } from '../hooks/useInpageScrollViewport';
+import InpageScrollSentinel from '../components/InpageScrollSentinel';
 import { VirtualCardGrid } from '../components/VirtualCardGrid';
 import OverlayScrollArea from '../components/OverlayScrollArea';
 import { ALBUMS_INPAGE_SCROLL_VIEWPORT_ID } from '../constants/appScroll';
@@ -70,11 +72,19 @@ export default function Albums() {
     setLosslessOnly,
   } = useAlbumBrowseFilters(serverId);
 
+  const {
+    scrollBodyEl,
+    bindScrollBody: bindAlbumsScrollBody,
+    getScrollRoot,
+  } = useInpageScrollViewport();
+
   const starredOverrides = usePlayerStore(s => s.starredOverrides);
   const {
     albums,
     loading,
+    loadingMore,
     hasMore,
+    displayAlbums,
     visibleAlbums,
     genreFiltered,
     serverFilterActive,
@@ -84,7 +94,7 @@ export default function Albums() {
     debouncedYearFields,
     compFilterActive,
     pendingClientFilterMatch,
-    loadMore,
+    bindLoadMoreSentinel,
   } = useAlbumBrowseData({
     serverId,
     indexEnabled,
@@ -97,26 +107,20 @@ export default function Albums() {
     starredOnly,
     compFilter,
     starredOverrides,
+    getScrollRoot,
+    scrollRootEl: scrollBodyEl,
   });
 
-  const observerTarget = useRef<HTMLDivElement>(null);
   const gridMeasureRef = useRef<HTMLDivElement>(null);
   const maxGridCols = useAuthStore(s => clampLibraryGridMaxColumns(s.libraryGridMaxColumns));
   const [albumCellDisplayCssPx, setAlbumCellDisplayCssPx] = useState(140);
   const [albumGridCols, setAlbumGridCols] = useState(4);
-  const scrollBodyRef = useRef<HTMLDivElement | null>(null);
-  const [scrollBodyEl, setScrollBodyEl] = useState<HTMLDivElement | null>(null);
-  const bindAlbumsScrollBody = useCallback((el: HTMLDivElement | null) => {
-    scrollBodyRef.current = el;
-    setScrollBodyEl(el);
-  }, []);
 
   // ── Multi-selection ──────────────────────────────────────────────────────
-  // selectedIds + toggleSelect come from useRangeSelection (declared after
-  // `visibleAlbums` so Shift-click range expansion follows the visible order).
+  // `displayAlbums` — visible grid slice (local index) or loaded SQL pages (network).
   const [selectionMode, setSelectionMode] = useState(false);
 
-  const { selectedIds, toggleSelect, clearSelection: resetSelection } = useRangeSelection(visibleAlbums);
+  const { selectedIds, toggleSelect, clearSelection: resetSelection } = useRangeSelection(displayAlbums);
 
   const toggleSelectionMode = () => {
     setSelectionMode(v => !v);
@@ -128,7 +132,7 @@ export default function Albums() {
     resetSelection();
   };
 
-  const selectedAlbums = visibleAlbums.filter(a => selectedIds.has(a.id));
+  const selectedAlbums = displayAlbums.filter(a => selectedIds.has(a.id));
   const enqueue = usePlayerStore(state => state.enqueue);
 
   const handleEnqueueSelected = async () => {
@@ -208,16 +212,26 @@ export default function Albums() {
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [maxGridCols, visibleAlbums.length]);
+  }, [maxGridCols, displayAlbums.length]);
+
+  const prefetchLimit = Math.max(albumGridCols * 3, albumGridCols);
+  const prefetchKey = useMemo(
+    () => displayAlbums.slice(0, prefetchLimit).map(a => a.id).join('\u0001'),
+    [displayAlbums, prefetchLimit],
+  );
+  const prefetchAlbums = useMemo(
+    () => displayAlbums.slice(0, prefetchLimit),
+    [displayAlbums, prefetchLimit],
+  );
 
   useLibraryCoverPrefetch(
     [
       {
-        albums: visibleAlbums.slice(0, Math.max(albumGridCols * 3, albumGridCols)),
+        albums: prefetchAlbums,
         priority: 'high',
       },
     ],
-    [visibleAlbums, albumGridCols],
+    [prefetchKey, albumGridCols],
   );
 
   const mainstageHeaderTight = useMainstageInpageHeaderTight(scrollBodyEl, [
@@ -236,21 +250,6 @@ export default function Albums() {
   useEffect(() => {
     if (!indexEnabled && losslessOnly) setLosslessOnly(false);
   }, [indexEnabled, losslessOnly]);
-
-  useEffect(() => {
-    const node = observerTarget.current;
-    if (!node) return;
-    const root = scrollBodyRef.current;
-    const observer = new IntersectionObserver(
-      entries => { if (entries[0]?.isIntersecting) loadMore(); },
-      {
-        root: root instanceof HTMLElement ? root : null,
-        rootMargin: '1500px',
-      },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [loadMore, scrollBodyEl]);
 
   const sortOptions: { value: SortType; label: string }[] = [
     { value: 'alphabeticalByName',   label: t('albums.sortByName') },
@@ -359,7 +358,7 @@ export default function Albums() {
         railInset="panel"
         measureDeps={[
           loading,
-          visibleAlbums.length,
+          displayAlbums.length,
           genreFiltered,
           hasMore,
           selectionMode,
@@ -393,20 +392,21 @@ export default function Albums() {
             {!perfFlags.disableMainstageGridCards && (
               <div ref={gridMeasureRef}>
                 <VirtualCardGrid
-                  items={visibleAlbums}
+                  items={displayAlbums}
                   itemKey={(a, _i) => a.id}
                   rowVariant="album"
                   disableVirtualization={perfFlags.disableMainstageVirtualLists}
-                  layoutSignal={visibleAlbums.length}
+                  layoutSignal={displayAlbums.length}
                   scrollRootId={ALBUMS_INPAGE_SCROLL_VIEWPORT_ID}
                   warmGridCovers={albumGridWarmCovers(
                     albumCellDisplayCssPx,
-                    Math.min(visibleAlbums.length, Math.max(albumGridCols * 6, 48)),
+                    Math.min(displayAlbums.length, Math.max(albumGridCols * 6, 48)),
                   )}
                   renderItem={a => (
                     <AlbumCard
                       album={a}
                       displayCssPx={albumCellDisplayCssPx}
+                      observeScrollRootId={ALBUMS_INPAGE_SCROLL_VIEWPORT_ID}
                       linkQuery={losslessOnly ? LOSSLESS_MODE_QUERY : undefined}
                       selectionMode={selectionMode}
                       selected={selectedIds.has(a.id)}
@@ -417,10 +417,8 @@ export default function Albums() {
                 />
               </div>
             )}
-            {!genreFiltered && (
-              <div ref={observerTarget} style={{ height: '20px', margin: '2rem 0', display: 'flex', justifyContent: 'center' }}>
-                {loading && hasMore && <div className="spinner" style={{ width: 20, height: 20 }} />}
-              </div>
+            {hasMore && (
+              <InpageScrollSentinel bindSentinel={bindLoadMoreSentinel} loading={loadingMore} />
             )}
           </>
         )}

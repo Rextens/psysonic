@@ -9,8 +9,11 @@ import { libraryCoverBackfillSetUiPriority } from '../api/coverCache';
 import {
   __test_resetCoverTraffic,
   coverTrafficBackgroundPaused,
+  coverTrafficBeginGridPagination,
   coverTrafficBeginNavigation,
+  coverTrafficEndGridPagination,
   coverTrafficEndNavigation,
+  coverTrafficGridPaginationDepth,
 } from './coverTraffic';
 
 describe('coverTraffic navigation hold', () => {
@@ -38,5 +41,29 @@ describe('coverTraffic navigation hold', () => {
     coverTrafficEndNavigation();
     coverTrafficEndNavigation();
     expect(coverTrafficBackgroundPaused()).toBe(false);
+  });
+});
+
+describe('coverTraffic grid pagination hold', () => {
+  beforeEach(() => {
+    __test_resetCoverTraffic();
+  });
+
+  it('pauses middle/low cover work while album pages fetch', () => {
+    coverTrafficBeginGridPagination();
+    expect(coverTrafficBackgroundPaused()).toBe(true);
+    expect(coverTrafficGridPaginationDepth()).toBe(1);
+    coverTrafficEndGridPagination();
+    expect(coverTrafficBackgroundPaused()).toBe(false);
+    expect(coverTrafficGridPaginationDepth()).toBe(0);
+  });
+
+  it('does not leak hold depth when overlapping browse fetches end out of order', () => {
+    coverTrafficBeginGridPagination();
+    coverTrafficBeginGridPagination();
+    coverTrafficEndGridPagination();
+    expect(coverTrafficGridPaginationDepth()).toBe(1);
+    coverTrafficEndGridPagination();
+    expect(coverTrafficGridPaginationDepth()).toBe(0);
   });
 });

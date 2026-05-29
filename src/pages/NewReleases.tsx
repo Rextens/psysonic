@@ -3,7 +3,7 @@ import { getAlbumsByGenre } from '../api/subsonicGenres';
 import { getAlbumList, getAlbum } from '../api/subsonicLibrary';
 import type { SubsonicAlbum } from '../api/subsonicTypes';
 import { dedupeById } from '../utils/dedupeById';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { CheckSquare2, Download, HardDriveDownload } from 'lucide-react';
 import AlbumCard from '../components/AlbumCard';
 import GenreFilterBar from '../components/GenreFilterBar';
@@ -22,6 +22,10 @@ import { albumGridWarmCovers } from '../cover/layoutSizes';
 import { VirtualCardGrid } from '../components/VirtualCardGrid';
 import OverlayScrollArea from '../components/OverlayScrollArea';
 import { NEW_RELEASES_INPAGE_SCROLL_VIEWPORT_ID } from '../constants/appScroll';
+import { useAsyncInpagePagination } from '../hooks/useAsyncInpagePagination';
+import { useInpageScrollSentinel } from '../hooks/useInpageScrollSentinel';
+import { useInpageScrollViewport } from '../hooks/useInpageScrollViewport';
+import InpageScrollSentinel from '../components/InpageScrollSentinel';
 
 const PAGE_SIZE = 30;
 
@@ -44,17 +48,21 @@ export default function NewReleases() {
   const requestDownloadFolder = useDownloadModalStore(s => s.requestFolder);
 
   const [albums, setAlbums] = useState<SubsonicAlbum[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
-  const observerTarget = useRef<HTMLDivElement>(null);
-  const scrollBodyRef = useRef<HTMLDivElement | null>(null);
-  const [scrollBodyEl, setScrollBodyEl] = useState<HTMLDivElement | null>(null);
-  const bindNewReleasesScrollBody = useCallback((el: HTMLDivElement | null) => {
-    scrollBodyRef.current = el;
-    setScrollBodyEl(el);
-  }, []);
+  const {
+    scrollBodyEl,
+    bindScrollBody: bindNewReleasesScrollBody,
+    getScrollRoot,
+  } = useInpageScrollViewport();
+  const {
+    loading,
+    setLoading,
+    resetPage,
+    runLoad,
+    requestNextPage,
+    isBlocked,
+  } = useAsyncInpagePagination(PAGE_SIZE, { initialLoading: true });
   const [selectionMode, setSelectionMode] = useState(false);
   const filtered = selectedGenres.length > 0;
 
@@ -110,16 +118,13 @@ export default function NewReleases() {
   };
 
   const load = useCallback(async (offset: number, append = false) => {
-    setLoading(true);
-    try {
+    await runLoad(async () => {
       const data = await getAlbumList('newest', PAGE_SIZE, offset);
       if (append) setAlbums(prev => [...prev, ...data]);
       else setAlbums(data);
       setHasMore(data.length === PAGE_SIZE);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    });
+  }, [runLoad]);
 
   const loadFiltered = useCallback(async (genres: string[]) => {
     setLoading(true);
@@ -133,30 +138,23 @@ export default function NewReleases() {
 
   useEffect(() => {
     if (filtered) loadFiltered(selectedGenres);
-    else { setPage(0); load(0); }
-  }, [filtered, selectedGenres, load, loadFiltered]);
+    else {
+      resetPage();
+      void load(0);
+    }
+  }, [filtered, selectedGenres, load, loadFiltered, resetPage]);
 
   const loadMore = useCallback(() => {
-    if (loading || !hasMore || filtered) return;
-    const next = page + 1;
-    setPage(next);
-    load(next * PAGE_SIZE, true);
-  }, [loading, hasMore, page, load, filtered]);
+    if (!hasMore || filtered || isBlocked()) return;
+    requestNextPage(offset => load(offset, true));
+  }, [hasMore, filtered, isBlocked, requestNextPage, load]);
 
-  useEffect(() => {
-    const node = observerTarget.current;
-    if (!node) return;
-    const root = scrollBodyRef.current;
-    const observer = new IntersectionObserver(
-      entries => { if (entries[0]?.isIntersecting) loadMore(); },
-      {
-        root: root instanceof HTMLElement ? root : null,
-        rootMargin: '200px',
-      },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [loadMore, scrollBodyEl]);
+  const bindLoadMoreSentinel = useInpageScrollSentinel({
+    active: !filtered && hasMore,
+    getScrollRoot,
+    scrollRootEl: scrollBodyEl,
+    onIntersect: loadMore,
+  });
 
   return (
     <div className={`content-body animate-fade-in mainstage-inpage-split${mainstageHeaderTight ? ' mainstage-inpage--header-tight' : ''}`}>
@@ -232,6 +230,7 @@ export default function NewReleases() {
               renderItem={a => (
                 <AlbumCard
                   album={a}
+                  observeScrollRootId={NEW_RELEASES_INPAGE_SCROLL_VIEWPORT_ID}
                   selectionMode={selectionMode}
                   selected={selectedIds.has(a.id)}
                   onToggleSelect={toggleSelect}
@@ -239,10 +238,8 @@ export default function NewReleases() {
                 />
               )}
             />
-            {!filtered && (
-              <div ref={observerTarget} style={{ height: '20px', margin: '2rem 0', display: 'flex', justifyContent: 'center' }}>
-                {loading && hasMore && <div className="spinner" style={{ width: 20, height: 20 }} />}
-              </div>
+            {!filtered && hasMore && (
+              <InpageScrollSentinel bindSentinel={bindLoadMoreSentinel} loading={loading} />
             )}
           </>
         )}

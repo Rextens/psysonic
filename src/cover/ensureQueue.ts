@@ -24,11 +24,87 @@ export const COVER_ENSURE_MAX_INFLIGHT = 10;
 const MAX_INFLIGHT = COVER_ENSURE_MAX_INFLIGHT;
 /** Drop stale scroll-ahead work so the queue cannot grow without bound. */
 const MAX_QUEUE = 96;
+/** Abort wedged Rust ensures so invoke slots cannot stall the grid forever. */
+const ENSURE_INVOKE_TIMEOUT_MS = 45_000;
 
 let inflight = 0;
 let queue: EnsureJob[] = [];
 let nextOrderKey = 0;
 const inflightStorageKeys = new Set<string>();
+const backlogDrainListeners = new Set<() => void>();
+
+type EnsureInvokeResult = { hit: boolean; path: string };
+
+function coverInflightKey(ref: CoverArtRef): string {
+  return `${coverIndexKeyFromRef(ref)}:${ref.cacheKind}:${ref.cacheEntityId}`;
+}
+
+/** One active Rust ensure per cover art id — waiters attach without consuming invoke slots. */
+const coverArtInFlight = new Map<string, Promise<EnsureInvokeResult>>();
+
+function withEnsureTimeout(
+  promise: Promise<EnsureInvokeResult>,
+): Promise<EnsureInvokeResult> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error('cover ensure invoke timeout'));
+    }, ENSURE_INVOKE_TIMEOUT_MS);
+    void promise.then(
+      value => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      error => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+function invokeEnsureForCover(
+  ref: CoverArtRef,
+  tier: CoverArtTier,
+  priority: CoverPrefetchPriority,
+): Promise<EnsureInvokeResult> {
+  const key = coverInflightKey(ref);
+  const existing = coverArtInFlight.get(key);
+  if (existing) return existing;
+
+  const flight = withEnsureTimeout(
+    coverCacheEnsure(ref, tier, priority).then(r => ({ hit: r.hit, path: r.path })),
+  ).finally(() => {
+    if (coverArtInFlight.get(key) === flight) coverArtInFlight.delete(key);
+  });
+  coverArtInFlight.set(key, flight);
+  return flight;
+}
+
+function settleJob(job: EnsureJob, result: EnsureInvokeResult): void {
+  job.resolve(result);
+}
+
+function attachQueuedJobsToActiveFlights(): void {
+  let i = 0;
+  while (i < queue.length) {
+    const job = queue[i]!;
+    const flight = coverArtInFlight.get(coverInflightKey(job.ref));
+    if (!flight) {
+      i += 1;
+      continue;
+    }
+    queue.splice(i, 1);
+    void flight
+      .then(r => settleJob(job, r))
+      .catch(() => settleJob(job, { hit: false, path: '' }));
+  }
+}
+
+function notifyBacklogDrain(): void {
+  for (const listener of backlogDrainListeners) {
+    listener();
+  }
+}
 
 function priorityRank(p: CoverPrefetchPriority): number {
   return p === 'high' ? 0 : p === 'middle' ? 1 : 2;
@@ -44,39 +120,26 @@ function sortQueue(): void {
 
 function trimQueue(): void {
   while (queue.length > MAX_QUEUE) {
-    let worstIdx = 0;
-    for (let i = 1; i < queue.length; i += 1) {
-      const a = queue[worstIdx]!;
-      const b = queue[i]!;
-      const rankA = priorityRank(a.priority);
-      const rankB = priorityRank(b.priority);
-      if (rankB > rankA || (rankB === rankA && b.orderKey < a.orderKey)) {
+    let worstIdx = -1;
+    for (let i = 0; i < queue.length; i += 1) {
+      const job = queue[i]!;
+      if (job.priority === 'high') continue;
+      if (worstIdx < 0) {
+        worstIdx = i;
+        continue;
+      }
+      const worst = queue[worstIdx]!;
+      const rank = priorityRank(job.priority);
+      const worstRank = priorityRank(worst.priority);
+      if (rank > worstRank || (rank === worstRank && job.orderKey < worst.orderKey)) {
         worstIdx = i;
       }
     }
+    if (worstIdx < 0) break;
     const [job] = queue.splice(worstIdx, 1);
     job.resolve({ hit: false, path: '' });
     ensureInflight.delete(job.storageKey);
   }
-}
-
-function coverInflightKey(ref: CoverArtRef): string {
-  return `${coverIndexKeyFromRef(ref)}:${ref.cacheKind}:${ref.cacheEntityId}`;
-}
-
-/** Serialize ensures per cover ID so we do not re-download for every tier. */
-const coverDownloadTail = new Map<string, Promise<unknown>>();
-
-function ensureForCover(
-  ref: CoverArtRef,
-  tier: CoverArtTier,
-  priority: CoverPrefetchPriority,
-) {
-  const key = coverInflightKey(ref);
-  const tail = coverDownloadTail.get(key) ?? Promise.resolve();
-  const run = tail.then(() => coverCacheEnsure(ref, tier, priority));
-  coverDownloadTail.set(key, run.catch(() => {}));
-  return run;
 }
 
 function findQueuedJob(storageKey: string): EnsureJob | undefined {
@@ -93,21 +156,32 @@ function bumpJob(job: EnsureJob, priority?: CoverPrefetchPriority): void {
 
 function pump(): void {
   if (coverTrafficServerSwitchPaused()) return;
+  attachQueuedJobsToActiveFlights();
+
   while (inflight < MAX_INFLIGHT && queue.length > 0) {
-    const next = queue[0]!;
-    if (coverTrafficBackgroundPaused() && next.priority !== 'high') {
+    let pickIdx = -1;
+    for (let i = 0; i < queue.length; i += 1) {
+      const candidate = queue[i]!;
+      if (coverTrafficBackgroundPaused() && candidate.priority !== 'high') {
+        break;
+      }
+      if (coverArtInFlight.has(coverInflightKey(candidate.ref))) continue;
+      pickIdx = i;
       break;
     }
-    const job = queue.shift()!;
+    if (pickIdx < 0) break;
+
+    const job = queue.splice(pickIdx, 1)[0]!;
     inflight += 1;
     inflightStorageKeys.add(job.storageKey);
-    void ensureForCover(job.ref, job.tier, job.priority)
-      .then(r => job.resolve({ hit: r.hit, path: r.path }))
-      .catch(() => job.resolve({ hit: false, path: '' }))
+    void invokeEnsureForCover(job.ref, job.tier, job.priority)
+      .then(r => settleJob(job, r))
+      .catch(() => settleJob(job, { hit: false, path: '' }))
       .finally(() => {
         inflight -= 1;
         inflightStorageKeys.delete(job.storageKey);
         pump();
+        notifyBacklogDrain();
       });
   }
 }
@@ -122,6 +196,19 @@ export function coverEnsureBump(
   const job = findQueuedJob(storageKey);
   if (!job) return;
   bumpJob(job, priority);
+  pump();
+}
+
+/** Set queued priority (upgrade or downgrade) and bump order for LIFO within the tier. */
+export function coverEnsureReprioritize(
+  storageKey: string,
+  priority: CoverPrefetchPriority,
+): void {
+  const job = findQueuedJob(storageKey);
+  if (!job) return;
+  job.priority = priority;
+  job.orderKey = ++nextOrderKey;
+  sortQueue();
   pump();
 }
 
@@ -147,9 +234,50 @@ export function coverEnsureRelease(storageKey: string): void {
   }
 }
 
+/** Resume ensure pump after a grid-pagination hold ends. */
+export function coverEnsureResumePump(): void {
+  pump();
+  notifyBacklogDrain();
+}
+
+/** Retry pagination / prefetch when the ensure backlog drops (sentinel may still be visible). */
+export function coverEnsureSubscribeBacklogDrain(listener: () => void): () => void {
+  backlogDrainListeners.add(listener);
+  return () => {
+    backlogDrainListeners.delete(listener);
+  };
+}
+
 /** Queued + active ensure jobs (for library backfill watermark). */
 export function coverEnsureQueueBacklog(): number {
   return queue.length + inflight;
+}
+
+export type CoverEnsureQueueStats = {
+  queuedHigh: number;
+  queuedMiddle: number;
+  queuedLow: number;
+  inflight: number;
+  maxInflight: number;
+};
+
+/** Webview ensure queue — tier breakdown for perf probe overlay. */
+export function coverEnsureQueueStats(): CoverEnsureQueueStats {
+  let queuedHigh = 0;
+  let queuedMiddle = 0;
+  let queuedLow = 0;
+  for (const job of queue) {
+    if (job.priority === 'high') queuedHigh += 1;
+    else if (job.priority === 'middle') queuedMiddle += 1;
+    else queuedLow += 1;
+  }
+  return {
+    queuedHigh,
+    queuedMiddle,
+    queuedLow,
+    inflight,
+    maxInflight: MAX_INFLIGHT,
+  };
 }
 
 /** @internal Vitest-only — module singleton queue. */
@@ -159,7 +287,8 @@ export function __test_resetCoverEnsureQueue(): void {
   nextOrderKey = 0;
   inflightStorageKeys.clear();
   ensureInflight.clear();
-  coverDownloadTail.clear();
+  coverArtInFlight.clear();
+  backlogDrainListeners.clear();
 }
 
 /** @internal Vitest-only — queued cover art IDs front-to-back. */

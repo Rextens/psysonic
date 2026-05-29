@@ -1,29 +1,111 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { analysisGetPipelineQueueStats, type AnalysisPipelineQueueStatsDto } from '../api/analysis';
-import { usePerfProbeFlag } from '../utils/perf/perfFlags';
+import { coverGetPipelineQueueStats, type CoverPipelineQueueStatsDto } from '../api/coverCache';
+import { coverEnsureQueueStats } from '../cover/ensureQueue';
+import { coverPeekQueueStats } from '../cover/peekQueue';
+import PerfOverlaySparkline from './perf/PerfOverlaySparkline';
+import { usePerfProbeFlags } from '../utils/perf/perfFlags';
 import {
   formatPerfMs,
   getAnalysisTracksPerMinute,
   useAnalysisPerfLast,
 } from '../utils/perf/analysisPerfStore';
 import { formatAnalysisPipelineQueueOverlay } from '../utils/perf/formatAnalysisQueueStats';
+import { formatCoverPipelineQueueOverlay } from '../utils/perf/formatCoverPipelineQueueOverlay';
+import {
+  buildLiveOverlayItems,
+  type LiveOverlayItem,
+} from '../utils/perf/formatLiveOverlayItems';
+import {
+  getPerfLiveHistoryClock,
+  syncPerfLiveHistoryFromPoll,
+  usePerfLiveHistorySamples,
+} from '../utils/perf/perfLiveHistory';
+import { acquirePerfLivePoll, usePerfLiveSnapshot } from '../utils/perf/perfLiveStore';
+import { hasAnyLiveMetricPollNeed, usePerfLiveOverlayPins } from '../utils/perf/perfOverlayPins';
+import {
+  perfOverlayCornerClass,
+  usePerfOverlayAppearance,
+} from '../utils/perf/perfOverlayAppearance';
+import {
+  resolveOverlayVisibility,
+  usePerfOverlayMode,
+} from '../utils/perf/perfOverlayMode';
 import { useAnalysisPerfListener } from '../hooks/useAnalysisPerfListener';
 
 const SAMPLE_MS = 500;
 const TPM_REFRESH_MS = 500;
 const QUEUE_STATS_MS = 750;
 
-/** FPS + analysis throughput overlay (Performance Probe). */
+function LiveOverlayPinnedMetric({
+  item,
+  now,
+}: {
+  item: LiveOverlayItem;
+  now: number;
+}) {
+  const history = usePerfLiveHistorySamples(item.id);
+  const sparklineKind = item.kind === 'memory' ? 'memory' : 'cpu';
+
+  return (
+    <div className="fps-overlay__live-metric">
+      <div className="fps-overlay__row fps-overlay__row--live">{item.line}</div>
+      {item.sparkline && (
+        <PerfOverlaySparkline samples={history} kind={sparklineKind} now={now} />
+      )}
+    </div>
+  );
+}
+
+/** FPS + pipeline + pinned live metrics overlay (Performance Probe). */
 export default function FpsOverlay() {
-  const showFpsOverlay = usePerfProbeFlag('showFpsOverlay');
-  const showAnalysisPerfOverlay = usePerfProbeFlag('showAnalysisPerfOverlay');
+  const overlayMode = usePerfOverlayMode();
+  const perfFlags = usePerfProbeFlags();
+  const livePins = usePerfLiveOverlayPins();
+  const live = usePerfLiveSnapshot();
+  const overlayAppearance = usePerfOverlayAppearance();
   const [fps, setFps] = useState(0);
   const [tpm, setTpm] = useState(0);
   const [queueStats, setQueueStats] = useState<AnalysisPipelineQueueStatsDto | null>(null);
+  const [coverQueueLines, setCoverQueueLines] = useState<string[]>([]);
   const last = useAnalysisPerfLast();
+  const lastHistoryAt = useRef(0);
 
-  useAnalysisPerfListener(showAnalysisPerfOverlay);
+  const liveOverlayItems = useMemo(
+    () => buildLiveOverlayItems(livePins, live),
+    [livePins, live],
+  );
+
+  const visibility = useMemo(
+    () => resolveOverlayVisibility(overlayMode, perfFlags, liveOverlayItems.length),
+    [overlayMode, perfFlags, liveOverlayItems.length],
+  );
+
+  const {
+    showFps: showFpsOverlay,
+    showAnalysis: showAnalysisPerfOverlay,
+    showCover: showCoverPerfOverlay,
+    showLive,
+  } = visibility;
+
+  lastHistoryAt.current = overlayMode === 'pinned'
+    ? syncPerfLiveHistoryFromPoll(livePins, live, lastHistoryAt.current)
+    : lastHistoryAt.current;
+
+  const sparklineNow = useMemo(() => {
+    const clock = getPerfLiveHistoryClock(
+      liveOverlayItems.filter(item => item.sparkline).map(item => item.id),
+    );
+    return clock > 0 ? clock : Date.now();
+  }, [liveOverlayItems, live.updatedAt]);
+
+  useAnalysisPerfListener(showAnalysisPerfOverlay || livePins.has('analysis:tpm') || livePins.has('analysis:last'));
+
+  useEffect(() => {
+    if (overlayMode !== 'pinned' || !hasAnyLiveMetricPollNeed()) return;
+    return acquirePerfLivePoll('overlay-pins');
+  }, [overlayMode, livePins.size]);
 
   useEffect(() => {
     if (!showAnalysisPerfOverlay) {
@@ -60,6 +142,36 @@ export default function FpsOverlay() {
   }, [showAnalysisPerfOverlay]);
 
   useEffect(() => {
+    if (!showCoverPerfOverlay) {
+      setCoverQueueLines([]);
+      return;
+    }
+    let cancelled = false;
+    const refresh = () => {
+      void coverGetPipelineQueueStats()
+        .then((rust: CoverPipelineQueueStatsDto) => {
+          if (cancelled) return;
+          setCoverQueueLines(
+            formatCoverPipelineQueueOverlay({
+              rust,
+              ensure: coverEnsureQueueStats(),
+              peek: coverPeekQueueStats(),
+            }),
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setCoverQueueLines([]);
+        });
+    };
+    refresh();
+    const id = window.setInterval(refresh, QUEUE_STATS_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [showCoverPerfOverlay]);
+
+  useEffect(() => {
     if (!showFpsOverlay) {
       setFps(0);
       return;
@@ -85,19 +197,35 @@ export default function FpsOverlay() {
     return () => cancelAnimationFrame(rafId);
   }, [showFpsOverlay]);
 
-  if (!showFpsOverlay && !showAnalysisPerfOverlay) return null;
+  if (overlayMode === 'off') return null;
+  if (!showFpsOverlay && !showAnalysisPerfOverlay && !showCoverPerfOverlay && !showLive) return null;
+
+  const analysisQueueLines = queueStats ? formatAnalysisPipelineQueueOverlay(queueStats) : [];
 
   return createPortal(
-    <div className="fps-overlay" aria-hidden="true">
+    <div
+      className={`fps-overlay ${perfOverlayCornerClass(overlayAppearance.corner)}`}
+      style={{ '--fps-overlay-opacity': overlayAppearance.opacity } as CSSProperties}
+      aria-hidden="true"
+    >
       {showFpsOverlay && (
-        <div className="fps-overlay__row">
+        <div className="fps-overlay__row fps-overlay__row--fps">
           {fps}
           {' '}
           <span className="fps-overlay__unit">FPS</span>
         </div>
       )}
+      {showLive && (
+        <div className="fps-overlay__block">
+          <div className="fps-overlay__block-title">Live</div>
+          {liveOverlayItems.map(item => (
+            <LiveOverlayPinnedMetric key={item.id} item={item} now={sparklineNow} />
+          ))}
+        </div>
+      )}
       {showAnalysisPerfOverlay && (
-        <>
+        <div className="fps-overlay__block">
+          <div className="fps-overlay__block-title">Analysis pipeline</div>
           <div className="fps-overlay__row">
             {tpm.toFixed(1)}
             {' '}
@@ -122,12 +250,24 @@ export default function FpsOverlay() {
               </div>
             </>
           )}
-          {queueStats && formatAnalysisPipelineQueueOverlay(queueStats).map(line => (
+          {analysisQueueLines.map(line => (
             <div key={line} className="fps-overlay__row fps-overlay__row--steps">
               {line}
             </div>
           ))}
-        </>
+        </div>
+      )}
+      {showCoverPerfOverlay && (
+        <div className="fps-overlay__block">
+          <div className="fps-overlay__block-title">Cover pipeline</div>
+          {coverQueueLines.length > 0 ? coverQueueLines.map(line => (
+            <div key={line} className="fps-overlay__row fps-overlay__row--steps">
+              {line}
+            </div>
+          )) : (
+            <div className="fps-overlay__row fps-overlay__row--steps">collecting…</div>
+          )}
+        </div>
       )}
     </div>,
     document.body,
