@@ -662,6 +662,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **Settings → offline & cache** caused periodic CPU spikes: the section re-walked each server's full cover directory every 15s. The per-server walk is now memoized with a short TTL and reused by the stats/progress commands; the menu recomputes on entry and via progress/cache-cleared events, with a 5-minute safety poll instead of a tight 15s loop.
 * Transient download failures (network / 5xx / 429) retry up to 3× with exponential backoff; permanent 4xx settle without re-scanning.
 
+### Cover art — per-song over-fetch on Navidrome (album/mf-* explosion)
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#944](https://github.com/Psychotoxical/psysonic/pull/944)**
+
+* The per-disc cover detection treated each track's own `mf-<id>` coverArt as "distinct disc art", so backfill warmed one cover per track (e.g. ~520k cached elements for ~170k tracks) and filled the `album/` bucket with `mf-*` directories.
+* It now treats a release as multi-disc only when each disc has a single consistent cover that differs across discs (a genuine box set); per-song ids collapse to one cover per album (≈ albums + artists). Fixed on both the Rust backfill path and the on-demand TS `albumHasDistinctDiscCovers`.
+* Failed cover downloads are now logged with the album/artist name and the server error (e.g. `fetch failed for album "X" — Artist (coverArtId=…): cover HTTP 503`). Backfill failures log at the normal level; incidental on-demand misses stay at the debug level.
+
 ## [1.46.0] - 2026-05-18
 
 > **🙏 Special thanks to [@zz5zz](https://github.com/zz5zz)** for his tireless quirk-spotting and bug reports on the [Psysonic Discord](https://discord.gg/AMnDRErm4u) — several of the polish fixes in this release landed directly off the back of his messages.

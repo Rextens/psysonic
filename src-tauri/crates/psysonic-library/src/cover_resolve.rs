@@ -54,7 +54,15 @@ pub fn album_has_distinct_disc_covers(
                 row.get::<_, Option<String>>(3)?,
             ))
         })?;
-        let mut art_by_disc: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+        // Genuine per-disc artwork = a multi-disc release where each disc has ONE
+        // consistent cover and those covers differ between discs (e.g. a box set).
+        // It must NOT be tripped by per-song cover ids: Navidrome (and other
+        // OpenSubsonic servers) give every track its own `mf-<id>` coverArt, so a
+        // disc whose tracks carry many different ids is per-song art, not per-disc
+        // art — treating it as distinct explodes the backfill into one cover per
+        // track instead of one per album.
+        let mut art_by_disc: std::collections::HashMap<i64, std::collections::HashSet<String>> =
+            std::collections::HashMap::new();
         for row in rows {
             let (track_id, disc_number, cover_art_id, row_album_id) = row?;
             let disc = disc_number.unwrap_or(1);
@@ -63,19 +71,22 @@ pub fn album_has_distinct_disc_covers(
                 .filter(|s| !s.is_empty())
                 .unwrap_or(album_id);
             let fetch = song_fetch_cover_art_id(cover_art_id.as_deref(), &track_id, al);
-            if let Some(prev) = art_by_disc.get(&disc) {
-                if prev != &fetch {
-                    return Ok(true);
-                }
-            } else {
-                art_by_disc.insert(disc, fetch);
-            }
+            art_by_disc.entry(disc).or_default().insert(fetch);
         }
         if art_by_disc.len() <= 1 {
             return Ok(false);
         }
-        let unique: std::collections::HashSet<_> = art_by_disc.values().collect();
-        Ok(unique.len() > 1)
+        let mut disc_covers: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for covers in art_by_disc.values() {
+            // Tracks within a disc disagree → per-song ids, not a shared disc cover.
+            if covers.len() != 1 {
+                return Ok(false);
+            }
+            if let Some(cover) = covers.iter().next() {
+                disc_covers.insert(cover.clone());
+            }
+        }
+        Ok(disc_covers.len() > 1)
     })
 }
 
@@ -190,6 +201,72 @@ pub fn cover_backfill_items_for_album(
     })?;
 
     Ok(out)
+}
+
+/// Human-readable label for a cover target, for failure logs:
+/// `album "Name" — Artist` / `artist "Name"`. Best-effort: returns `None` when
+/// the entity is not in the local index (e.g. a stale per-disc `mf-*` id), so
+/// the caller can fall back to the raw id.
+pub fn describe_cover_entity(
+    store: &LibraryStore,
+    library_server_id: &str,
+    cache_kind: &str,
+    cache_entity_id: &str,
+) -> Option<String> {
+    let id = cache_entity_id.trim();
+    if id.is_empty() {
+        return None;
+    }
+    store
+        .with_read_conn(|conn| {
+            let label = if cache_kind == "artist" {
+                let name = conn
+                    .query_row(
+                        "SELECT name FROM artist WHERE server_id = ?1 AND id = ?2",
+                        rusqlite::params![library_server_id, id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()?
+                    .or(conn
+                        .query_row(
+                            "SELECT artist FROM track
+                             WHERE server_id = ?1 AND artist_id = ?2 AND deleted = 0
+                               AND NULLIF(TRIM(artist), '') IS NOT NULL
+                             LIMIT 1",
+                            rusqlite::params![library_server_id, id],
+                            |row| row.get::<_, String>(0),
+                        )
+                        .optional()?);
+                name.map(|n| format!("artist \"{n}\""))
+            } else {
+                let pair = conn
+                    .query_row(
+                        "SELECT name, artist FROM album WHERE server_id = ?1 AND id = ?2",
+                        rusqlite::params![library_server_id, id],
+                        |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+                    )
+                    .optional()?
+                    .or(conn
+                        .query_row(
+                            "SELECT album, artist FROM track
+                             WHERE server_id = ?1 AND album_id = ?2 AND deleted = 0
+                               AND NULLIF(TRIM(album), '') IS NOT NULL
+                             LIMIT 1",
+                            rusqlite::params![library_server_id, id],
+                            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+                        )
+                        .optional()?);
+                pair.map(|(name, artist)| {
+                    match artist.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                        Some(a) => format!("album \"{name}\" — {a}"),
+                        None => format!("album \"{name}\""),
+                    }
+                })
+            };
+            Ok(label)
+        })
+        .ok()
+        .flatten()
 }
 
 pub fn resolve_artist_cover_entry(
@@ -328,5 +405,66 @@ mod tests {
         assert!(album_has_distinct_disc_covers(&store, "srv", "al-box").unwrap());
         let e = resolve_track_cover_entry(&store, "srv", "tr2").unwrap().unwrap();
         assert_eq!(e.cache_entity_id, "mf-b");
+    }
+
+    // Navidrome gives every song its own `mf-<id>` coverArt. Many tracks on a
+    // single disc must NOT count as distinct disc covers, or backfill would warm
+    // one cover per track instead of one per album.
+    #[test]
+    fn per_song_ids_within_one_disc_are_not_distinct() {
+        let store = LibraryStore::open_in_memory();
+        seed_album(&store, "srv", "al-nav", None);
+        seed_track(&store, "srv", "tr1", "al-nav", 1, Some("mf-1"));
+        seed_track(&store, "srv", "tr2", "al-nav", 1, Some("mf-2"));
+        seed_track(&store, "srv", "tr3", "al-nav", 1, Some("mf-3"));
+        assert!(!album_has_distinct_disc_covers(&store, "srv", "al-nav").unwrap());
+        let items = cover_backfill_items_for_album(&store, "srv", "al-nav").unwrap();
+        let ids: Vec<_> = items.iter().map(|i| i.cache_entity_id.as_str()).collect();
+        assert_eq!(ids, vec!["al-nav"]);
+    }
+
+    #[test]
+    fn describe_entity_labels_album_and_artist() {
+        let store = LibraryStore::open_in_memory();
+        store
+            .with_conn_mut("seed_describe", |conn| {
+                conn.execute(
+                    "INSERT INTO album (server_id, id, name, artist, synced_at, raw_json)
+                     VALUES ('srv', 'al-1', 'Discovery', 'Daft Punk', 1, '{}')",
+                    [],
+                )?;
+                conn.execute(
+                    "INSERT INTO artist (server_id, id, name, synced_at, raw_json)
+                     VALUES ('srv', 'ar-1', 'Daft Punk', 1, '{}')",
+                    [],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            describe_cover_entity(&store, "srv", "album", "al-1").as_deref(),
+            Some("album \"Discovery\" — Daft Punk"),
+        );
+        assert_eq!(
+            describe_cover_entity(&store, "srv", "artist", "ar-1").as_deref(),
+            Some("artist \"Daft Punk\""),
+        );
+        assert_eq!(describe_cover_entity(&store, "srv", "album", "al-missing"), None);
+    }
+
+    // Multi-disc, but each disc still exposes per-song ids (not a shared disc
+    // cover) → per-song art, so backfill collapses to the single album cover.
+    #[test]
+    fn per_song_ids_across_discs_are_not_distinct() {
+        let store = LibraryStore::open_in_memory();
+        seed_album(&store, "srv", "al-nav2", None);
+        seed_track(&store, "srv", "tr1", "al-nav2", 1, Some("mf-1"));
+        seed_track(&store, "srv", "tr2", "al-nav2", 1, Some("mf-2"));
+        seed_track(&store, "srv", "tr3", "al-nav2", 2, Some("mf-3"));
+        seed_track(&store, "srv", "tr4", "al-nav2", 2, Some("mf-4"));
+        assert!(!album_has_distinct_disc_covers(&store, "srv", "al-nav2").unwrap());
+        let items = cover_backfill_items_for_album(&store, "srv", "al-nav2").unwrap();
+        let ids: Vec<_> = items.iter().map(|i| i.cache_entity_id.as_str()).collect();
+        assert_eq!(ids, vec!["al-nav2"]);
     }
 }
