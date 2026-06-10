@@ -19,19 +19,20 @@ fn trimmed_nonempty(s: Option<&str>) -> Option<String> {
 }
 
 fn genre_album_order_sql(sort: &[LibrarySortClause]) -> String {
+    let la_artist = crate::album_compilation_filter::sql_track_group_display_artist("la");
     let mut keys: Vec<String> = Vec::new();
     for s in sort {
         let col = match s.field.as_str() {
-            "name" => "COALESCE(a.name, la.album_name) COLLATE NOCASE",
-            "artist" => "COALESCE(a.artist, la.artist) COLLATE NOCASE",
-            "year" => "COALESCE(a.year, la.year)",
+            "name" => "COALESCE(a.name, la.album_name) COLLATE NOCASE".to_string(),
+            "artist" => format!("COALESCE(a.artist, {la_artist}) COLLATE NOCASE"),
+            "year" => "COALESCE(a.year, la.year)".to_string(),
             _ => continue,
         };
         let dir = match s.dir {
             SortDir::Asc => "ASC",
             SortDir::Desc => "DESC",
         };
-        keys.push(format!("{col} {dir}"));
+        keys.push(format!("{col} {dir}", col = col));
     }
     if keys.is_empty() {
         keys.push("COALESCE(a.name, la.album_name) COLLATE NOCASE ASC".to_string());
@@ -123,12 +124,13 @@ pub fn list_albums_by_genre(
     }
 
     let where_sql = where_clauses.join(" AND ");
+    let la_artist = crate::album_compilation_filter::sql_track_group_display_artist("la");
     let sql = format!(
         "SELECT \
            la.server_id, \
            la.album_id, \
            COALESCE(a.name, la.album_name), \
-           COALESCE(a.artist, la.artist), \
+           COALESCE(a.artist, {la_artist}), \
            COALESCE(a.artist_id, la.artist_id), \
            COALESCE(a.song_count, la.track_count), \
            COALESCE(a.duration_sec, la.duration_sec), \
@@ -144,6 +146,7 @@ pub fn list_albums_by_genre(
              t.album_id, \
              MAX(t.album) AS album_name, \
              MAX(t.artist) AS artist, \
+             MAX(t.album_artist) AS album_artist, \
              MAX(t.artist_id) AS artist_id, \
              MAX(t.year) AS year, \
              MAX(t.genre) AS genre, \
