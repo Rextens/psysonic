@@ -323,6 +323,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+### Dev startup — missing generated release-notes bundle
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1060](https://github.com/Psychotoxical/psysonic/pull/1060)**
+
+* Fresh clones no longer crash Vite on `tauri:dev` when `src/generated/releaseNotesBundle.ts` is missing — `dev` and `tauri:dev` now run `prebuild:release-notes` before launch (file stays gitignored).
+
+
+
 ## [1.47.0]
 
 > **🙏 Thank you to our amazing Discord community.** This release would not have been possible without your tireless support, quality checks, bug reports and all-round collaboration. Every report, every repro and every bit of feedback shaped what shipped here — thank you. Come join us: [discord.gg/AMnDRErm4u](https://discord.gg/AMnDRErm4u)
