@@ -245,6 +245,7 @@ export default function Login() {
               { value: 'nb', label: t('settings.languageNb') },
               { value: 'ru', label: t('settings.languageRu') },
               { value: 'zh', label: t('settings.languageZh') },
+              { value: 'pl', label: t('settings.languagePl') },
             ]}
           />
         </div>
