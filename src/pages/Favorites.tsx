@@ -10,6 +10,7 @@ import FavoritesSongsTracklist from '../components/favorites/FavoritesSongsTrack
 import { useFavoritesData } from '../hooks/useFavoritesData';
 import { useFavoritesSongFiltering } from '../hooks/useFavoritesSongFiltering';
 import { useFavoritesSelection } from '../hooks/useFavoritesSelection';
+import { useBulkPlPickerOutsideClick } from '../hooks/useBulkPlPickerOutsideClick';
 import AlbumRow from '../components/AlbumRow';
 import ArtistRow from '../components/ArtistRow';
 import CachedImage from '../components/CachedImage';
@@ -120,7 +121,13 @@ export default function Favorites() {
     [selectedArtist, topFavoriteArtists],
   );
 
-  const { toggleSelect } = useFavoritesSelection(songs, inSelectMode, tracklistRef);
+  const { toggleSelect } = useFavoritesSelection(visibleSongs, inSelectMode, tracklistRef);
+
+  useBulkPlPickerOutsideClick(showPlPicker, setShowPlPicker);
+
+  useEffect(() => {
+    if (!inSelectMode) setShowPlPicker(false);
+  }, [inSelectMode]);
 
 
   if (loading) {
@@ -198,6 +205,7 @@ export default function Favorites() {
                 currentYear={CURRENT_YEAR}
                 inSelectMode={inSelectMode}
                 selectedCount={selectedCount}
+                selectedIds={selectedIds}
                 showPlPicker={showPlPicker}
                 setShowPlPicker={setShowPlPicker}
               />

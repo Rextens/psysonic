@@ -152,6 +152,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * The "new version available" popup no longer shows blurry, unfocused text on some Linux setups (the background blur could bleed onto the dialog). The version arrow now lines up with the heading, and the Skip / Remind me later buttons read clearly — Remind me later is the highlighted action when there's no in-app installer.
 
+### Favorites — bulk add to playlist and play/enqueue selected
+
+**By [@cucadmuh](https://github.com/cucadmuh), reported by zunoz on the Psysonic Discord, PR [#1140](https://github.com/Psychotoxical/psysonic/pull/1140)**
+
+* Bulk **Add to playlist** no longer cleared the selection on `mousedown` before the click ran, so chosen tracks were not actually added.
+* With rows selected, **Play all** / **Add all to queue** become **Play selected** / **Add selected to queue** and act on the checked tracks only.
+* Bulk add now snapshots every checked row when the picker opens so all selected tracks land in the playlist, not just the last one.
+
 
 ## [1.48.1] - 2026-06-15
 
