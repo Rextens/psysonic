@@ -27,7 +27,7 @@ export const smartPlaylists = {
   create: 'Nowa playlista inteligentna',
   save: 'Zapisz playlistę inteligentną',
   created: 'Utworzono {{name}}',
-  updated: 'Updated {{name}}',
+  updated: 'Zaktualizowano {{name}}',
   createFailed: 'Nie udało się utworzyć playlisty inteligentnej.',
   updateFailed: 'Nie udało się zaktualizować playlisty inteligentnej.',
   navidromeOnly: 'Playlisty inteligentne można tworzyć tylko na serwerach Navidrome.',
