@@ -7,6 +7,8 @@ import { useSidebarStore, SidebarItemConfig, CONSERVED_SIDEBAR_NAV_IDS } from '.
 import { useLuckyMixAvailable } from '../../hooks/useLuckyMixAvailable';
 import { ALL_NAV_ITEMS } from '../../config/navItems';
 import { applySidebarDropReorder } from '../../utils/componentHelpers/sidebarNavReorder';
+import { SettingsGroup } from './SettingsGroup';
+import { SettingsToggle } from './SettingsToggle';
 
 type DropTarget = { idx: number; before: boolean; section: 'library' | 'system' } | null;
 
@@ -36,11 +38,15 @@ export function SidebarCustomizer() {
   const [dropTarget, setDropTarget] = useState<DropTarget>(null);
   const dropTargetRef = useRef<DropTarget>(null);
   const itemsRef = useRef(items);
+  // React Compiler refs rule: ref kept in sync with the latest value for use in effects/handlers/cleanup; not render data.
+  // eslint-disable-next-line react-hooks/refs
   itemsRef.current = items;
   const randomNavMode = useAuthStore(s => s.randomNavMode);
   const setRandomNavMode = useAuthStore(s => s.setRandomNavMode);
   const nowPlayingAtTop = useAuthStore(s => s.nowPlayingAtTop);
   const setNowPlayingAtTop = useAuthStore(s => s.setNowPlayingAtTop);
+  const showLuckyMixMenu = useAuthStore(s => s.showLuckyMixMenu);
+  const setShowLuckyMixMenu = useAuthStore(s => s.setShowLuckyMixMenu);
   const luckyMixBase = useLuckyMixAvailable();
   const luckyMixAvailable = luckyMixBase && randomNavMode === 'separate';
 
@@ -55,6 +61,8 @@ export function SidebarCustomizer() {
   const systemItems  = items.filter(cfg => ALL_NAV_ITEMS[cfg.id]?.section === 'system');
 
   useEffect(() => {
+    // React Compiler set-state-in-effect rule: local state synced with store/prop inputs when the effect’s dependencies change.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isPsyDragging) { dropTargetRef.current = null; setDropTarget(null); }
   }, [isPsyDragging]);
 
@@ -125,51 +133,45 @@ export function SidebarCustomizer() {
 
   return (
     <>
-      <div className="settings-card" style={{ marginBottom: '1rem' }}>
-        <div className="settings-toggle-row">
-          <div>
-            <div style={{ fontWeight: 500 }}>{t('settings.randomNavSplitTitle')}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('settings.randomNavSplitDesc')}</div>
+      <SettingsGroup>
+        <SettingsToggle
+          label={t('settings.randomNavSplitTitle')}
+          desc={t('settings.randomNavSplitDesc')}
+          checked={randomNavMode === 'separate'}
+          onChange={c => setRandomNavMode(c ? 'separate' : 'hub')}
+        />
+        <SettingsToggle
+          label={t('settings.nowPlayingTopTitle')}
+          desc={t('settings.nowPlayingTopDesc')}
+          searchText={t('settings.nowPlayingTopTitle')}
+          checked={nowPlayingAtTop}
+          onChange={setNowPlayingAtTop}
+        />
+        <SettingsToggle
+          label={t('settings.luckyMixMenuTitle')}
+          desc={t('settings.luckyMixMenuDesc')}
+          checked={showLuckyMixMenu}
+          onChange={setShowLuckyMixMenu}
+        />
+      </SettingsGroup>
+
+      <SettingsGroup>
+        <div ref={containerRef} onMouseMove={handleMouseMove} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {/* Library block */}
+          <div style={{ padding: '4px 0' }}>
+            <div className="sidebar-customizer-block-label">{t('sidebar.library')}</div>
+            {libraryItems.map((cfg, i) => renderRow(cfg, i, 'library'))}
           </div>
-          <label className="toggle-switch" aria-label={t('settings.randomNavSplitTitle')}>
-            <input
-              type="checkbox"
-              checked={randomNavMode === 'separate'}
-              onChange={e => setRandomNavMode(e.target.checked ? 'separate' : 'hub')}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-        <div className="settings-toggle-row" data-settings-search={t('settings.nowPlayingTopTitle')}>
-          <div>
-            <div style={{ fontWeight: 500 }}>{t('settings.nowPlayingTopTitle')}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('settings.nowPlayingTopDesc')}</div>
-          </div>
-          <label className="toggle-switch" aria-label={t('settings.nowPlayingTopTitle')}>
-            <input
-              type="checkbox"
-              checked={nowPlayingAtTop}
-              onChange={e => setNowPlayingAtTop(e.target.checked)}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-      </div>
-      <div ref={containerRef} onMouseMove={handleMouseMove} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {/* Library block */}
-        <div className="settings-card" style={{ padding: '4px 0' }}>
-          <div className="sidebar-customizer-block-label">{t('sidebar.library')}</div>
-          {libraryItems.map((cfg, i) => renderRow(cfg, i, 'library'))}
-        </div>
-        {/* System block */}
-        <div className="settings-card" style={{ padding: '4px 0' }}>
-          <div className="sidebar-customizer-block-label">{t('sidebar.system')}</div>
-          {systemItems.map((cfg, i) => renderRow(cfg, i, 'system'))}
-          <div className="sidebar-customizer-fixed-hint">
-            <span>{t('settings.sidebarFixed')}: {t('sidebar.nowPlaying')}, {t('sidebar.settings')}</span>
+          {/* System block */}
+          <div style={{ padding: '4px 0' }}>
+            <div className="sidebar-customizer-block-label">{t('sidebar.system')}</div>
+            {systemItems.map((cfg, i) => renderRow(cfg, i, 'system'))}
+            <div className="sidebar-customizer-fixed-hint">
+              <span>{t('settings.sidebarFixed')}: {t('sidebar.nowPlaying')}, {t('sidebar.settings')}</span>
+            </div>
           </div>
         </div>
-      </div>
+      </SettingsGroup>
     </>
   );
 }

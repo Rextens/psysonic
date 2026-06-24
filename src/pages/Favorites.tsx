@@ -1,7 +1,5 @@
 import { queueSongStar, queueSongRating } from '../store/pendingStarSync';
-import type { SubsonicAlbum, SubsonicArtist, SubsonicSong, InternetRadioStation } from '../api/subsonicTypes';
-import { songToTrack } from '../utils/playback/songToTrack';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTracklistColumns, type ColDef } from '../utils/useTracklistColumns';
 import { TopFavoriteArtistsRow } from '../components/favorites/TopFavoriteArtists';
 import { RadioStationRow } from '../components/favorites/RadioFavorites';
@@ -10,20 +8,12 @@ import FavoritesSongsTracklist from '../components/favorites/FavoritesSongsTrack
 import { useFavoritesData } from '../hooks/useFavoritesData';
 import { useFavoritesSongFiltering } from '../hooks/useFavoritesSongFiltering';
 import { useFavoritesSelection } from '../hooks/useFavoritesSelection';
+import { useBulkPlPickerOutsideClick } from '../hooks/useBulkPlPickerOutsideClick';
 import AlbumRow from '../components/AlbumRow';
 import ArtistRow from '../components/ArtistRow';
-import CachedImage from '../components/CachedImage';
 import { usePlayerStore } from '../store/playerStore';
-import { usePreviewStore } from '../store/previewStore';
-import StarRating from '../components/StarRating';
-import { Cast, ChevronDown, ChevronRight, Check, Heart, ListPlus, Play, Square, Star, X, SlidersHorizontal, RotateCcw, AudioLines } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useDragDrop } from '../contexts/DragDropContext';
 import { useSelectionStore } from '../store/selectionStore';
-import { useOrbitSongRowBehavior } from '../hooks/useOrbitSongRowBehavior';
-import { AddToPlaylistSubmenu } from '../components/ContextMenu';
-import GenreFilterBar from '../components/GenreFilterBar';
 import FavoritesOfflineHeader from '../components/favorites/FavoritesOfflineHeader';
 
 const FAV_COLUMNS: readonly ColDef[] = [
@@ -43,9 +33,6 @@ const FAV_COLUMNS: readonly ColDef[] = [
 
 const CURRENT_YEAR = new Date().getFullYear();
 const MIN_YEAR = 1950;
-
-// Columns that support 3-state sorting (asc → desc → reset)
-const SORTABLE_COLUMNS = new Set(['title', 'artist', 'album', 'rating', 'duration']);
 
 export default function Favorites() {
   const { t } = useTranslation();
@@ -85,17 +72,11 @@ export default function Favorites() {
 
   const playTrack = usePlayerStore(s => s.playTrack);
   const enqueue = usePlayerStore(s => s.enqueue);
-  const { orbitActive, queueHint, addTrackToOrbit } = useOrbitSongRowBehavior();
   const playRadio = usePlayerStore(s => s.playRadio);
   const stop = usePlayerStore(s => s.stop);
-  const currentTrack = usePlayerStore(s => s.currentTrack);
   const currentRadio = usePlayerStore(s => s.currentRadio);
   const isPlaying = usePlayerStore(s => s.isPlaying);
-  const previewingId = usePreviewStore(s => s.previewingId);
-  const previewAudioStarted = usePreviewStore(s => s.audioStarted);
   const starredOverrides = usePlayerStore(s => s.starredOverrides);
-  const userRatingOverrides = usePlayerStore(s => s.userRatingOverrides);
-  const psyDrag = useDragDrop();
 
   const handleRate = (songId: string, rating: number) => {
     setRatings(r => ({ ...r, [songId]: rating }));
@@ -110,7 +91,7 @@ export default function Favorites() {
     setSongs(prev => prev.filter(s => s.id !== id));
   }
 
-  const { filteredSongs, visibleSongs, handleSortClick, getSortIndicator } = useFavoritesSongFiltering({
+  const { visibleSongs, handleSortClick, getSortIndicator } = useFavoritesSongFiltering({
     songs, sortKey, setSortKey, sortDir, setSortDir, sortClickCount, setSortClickCount,
     selectedArtist, selectedGenres, yearRange, ratings,
   });
@@ -120,7 +101,15 @@ export default function Favorites() {
     [selectedArtist, topFavoriteArtists],
   );
 
-  const { toggleSelect } = useFavoritesSelection(songs, inSelectMode, tracklistRef);
+  const { toggleSelect } = useFavoritesSelection(visibleSongs, inSelectMode, tracklistRef);
+
+  useBulkPlPickerOutsideClick(showPlPicker, setShowPlPicker);
+
+  useEffect(() => {
+    // React Compiler set-state-in-effect rule: local state synced with store/prop inputs when the effect’s dependencies change.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!inSelectMode) setShowPlPicker(false);
+  }, [inSelectMode]);
 
 
   if (loading) {
@@ -198,6 +187,7 @@ export default function Favorites() {
                 currentYear={CURRENT_YEAR}
                 inSelectMode={inSelectMode}
                 selectedCount={selectedCount}
+                selectedIds={selectedIds}
                 showPlPicker={showPlPicker}
                 setShowPlPicker={setShowPlPicker}
               />

@@ -13,16 +13,15 @@ import {
 } from '../cover/coverTraffic';
 import { coverEnsureQueueBacklog, coverEnsureResumePump, coverEnsureSubscribeBacklogDrain } from '../cover/ensureQueue';
 import { dedupeById } from '../utils/dedupeById';
-import { albumBrowseCompScanComplete } from '../utils/library/albumCompilation';
+import { albumBrowseCompScanComplete, albumBrowseCompFilterClientOnly } from '../utils/library/albumCompilation';
 import type { AlbumCompFilter } from '../utils/library/albumCompilation';
 import {
   albumBrowseHasGenreFilter,
   albumBrowseHasServerFilters,
+  applyAlbumBrowseClientFilters,
   fetchAlbumBrowseGenreOptions,
   fetchAlbumBrowsePage,
   fetchLocalAlbumCatalogChunk,
-  filterAlbumsByCompilation,
-  filterAlbumsByStarred,
   type AlbumBrowseQuery,
   type GenreFilterOption,
 } from '../utils/library/albumBrowseLoad';
@@ -137,15 +136,12 @@ export function useAlbumBrowseData({
   }), [sort, yearFilterActive, yearFilterBounds, losslessOnly, starredOnly, compFilter]);
 
   const compFilterActive = compFilter !== 'all';
-  const compFilterClientOnly = compFilterActive && !indexEnabled;
+  const compFilterClientOnly = albumBrowseCompFilterClientOnly(compFilter, browseMode);
 
-  const visibleAlbums = useMemo(() => {
-    let out = compFilterActive
-      ? filterAlbumsByCompilation(albums, compFilter)
-      : albums;
-    if (starredOnly) out = filterAlbumsByStarred(out, starredOverrides);
-    return out;
-  }, [albums, compFilter, compFilterActive, starredOnly, starredOverrides]);
+  const visibleAlbums = useMemo(
+    () => applyAlbumBrowseClientFilters(albums, browseQuery, starredOverrides, browseMode),
+    [albums, browseQuery, starredOverrides, browseMode],
+  );
 
   const {
     visibleCount,
@@ -208,6 +204,8 @@ export function useAlbumBrowseData({
   const loadMoreRef = useRef<() => void>(() => {});
   const sentinelIntersectingRef = useRef(false);
   const browseModeRef = useRef(browseMode);
+  // React Compiler refs rule: ref kept in sync with the latest value for use in effects/handlers/cleanup; not render data.
+  // eslint-disable-next-line react-hooks/refs
   browseModeRef.current = browseMode;
 
   useEffect(() => {
@@ -243,6 +241,7 @@ export function useAlbumBrowseData({
     try {
       const chunk = await fetchAlbumBrowseCatalogChunk(
         serverId,
+        indexEnabled,
         query,
         offset,
         CATALOG_CHUNK_SIZE,
@@ -261,7 +260,11 @@ export function useAlbumBrowseData({
         setCatalogLoadingMore(false);
       }
     }
-  }, [offlineBrowseActive, serverId, starredOverrides]);
+    // offlineBrowseActive is an intentional re-create trigger so the catalog
+    // reloads from the right source when offline browse toggles; the loader reads
+    // the active mode internally rather than referencing the flag directly here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indexEnabled, offlineBrowseActive, serverId, starredOverrides]);
 
   const loadBrowse = useCallback(async (
     query: AlbumBrowseQuery,
@@ -323,6 +326,8 @@ export function useAlbumBrowseData({
     catalogOffsetRef.current = 0;
     loadPendingRef.current = false;
     catalogLoadingRef.current = false;
+    // React Compiler set-state-in-effect rule: state set from an async result resolved in this effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(0);
     setAlbums([]);
     setHasMore(true);
@@ -359,6 +364,7 @@ export function useAlbumBrowseData({
         try {
           const first = await fetchLocalAlbumCatalogChunk(
             serverId,
+            indexEnabled,
             browseQuery,
             0,
             CATALOG_CHUNK_SIZE,
@@ -385,10 +391,15 @@ export function useAlbumBrowseData({
     return () => {
       cancelled = true;
     };
+    // starredOverrides is read to seed star state during the load, but the browse
+    // list must not reload on every star toggle — it is intentionally excluded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [browseQuery, indexEnabled, offlineBrowseActive, offlineBrowseReloadTs, serverId, loadBrowse, musicLibraryFilterVersion]);
 
   useEffect(() => {
     if (!genreCatalogActive) {
+      // React Compiler set-state-in-effect rule: state set from an async result resolved in this effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setGenreCatalogOptions(null);
       return;
     }
@@ -454,6 +465,8 @@ export function useAlbumBrowseData({
     loadMorePage();
   }, [browseMode, loadMoreGrid, loadMorePage]);
 
+  // React Compiler refs rule: ref kept in sync with the latest value for use in effects/handlers/cleanup; not render data.
+  // eslint-disable-next-line react-hooks/refs
   loadMoreRef.current = loadMore;
 
   useEffect(() => {

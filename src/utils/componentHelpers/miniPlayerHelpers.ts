@@ -1,6 +1,7 @@
 import { usePlayerStore } from '../../store/playerStore';
 import { resolveQueueTrack } from '../library/queueTrackView';
 import type { MiniSyncPayload, MiniTrackInfo } from '../miniPlayerBridge';
+import type { Track } from '../../store/playerStoreTypes';
 
 /** Half-width of the mini initial-snapshot queue window (matches the bridge). */
 const MINI_SNAPSHOT_HALF = 100;
@@ -23,7 +24,7 @@ export function readStoredExpandedHeight(): number {
       const n = parseInt(raw, 10);
       if (Number.isFinite(n) && n >= EXPANDED_MIN.h) return n;
     }
-  } catch {}
+  } catch { /* ignore: best-effort */ }
   return EXPANDED_SIZE.h;
 }
 
@@ -35,7 +36,7 @@ export function readQueueOpen(): boolean {
   try { return localStorage.getItem(QUEUE_OPEN_KEY) === '1'; } catch { return false; }
 }
 
-export function toMini(t: any): MiniTrackInfo {
+export function toMini(t: Track): MiniTrackInfo {
   return {
     id: t.id,
     title: t.title,
@@ -74,6 +75,8 @@ export function initialSnapshot(): MiniSyncPayload {
       volume: s.volume ?? 1,
       gaplessEnabled: false,
       crossfadeEnabled: false,
+      crossfadeSecs: 3,
+      crossfadeTrimSilence: false,
       infiniteQueueEnabled: false,
       isMobile: false,
     };
@@ -81,6 +84,7 @@ export function initialSnapshot(): MiniSyncPayload {
     return {
       track: null, queue: [], queueIndex: 0, queueServerId: null, isPlaying: false,
       volume: 1, gaplessEnabled: false, crossfadeEnabled: false,
+      crossfadeSecs: 3, crossfadeTrimSilence: false,
       infiniteQueueEnabled: false, isMobile: false,
     };
   }

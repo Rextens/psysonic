@@ -21,7 +21,6 @@ import { useThemeStore } from '../store/themeStore';
 import { useLyricsStore } from '../store/lyricsStore';
 import LyricsPane from './LyricsPane';
 import NowPlayingInfo from './NowPlayingInfo';
-import { TFunction } from 'i18next';
 import { useLuckyMixStore } from '../store/luckyMixStore';
 import { useQueueToolbarStore } from '../store/queueToolbarStore';
 import { SavePlaylistModal } from './queuePanel/SavePlaylistModal';
@@ -106,11 +105,10 @@ function QueuePanelHostOrSolo() {
 
   const crossfadeEnabled = useAuthStore(s => s.crossfadeEnabled);
   const crossfadeSecs = useAuthStore(s => s.crossfadeSecs);
+  const crossfadeTrimSilence = useAuthStore(s => s.crossfadeTrimSilence);
   const gaplessEnabled = useAuthStore(s => s.gaplessEnabled);
   const infiniteQueueEnabled = useAuthStore(s => s.infiniteQueueEnabled);
-  const setCrossfadeEnabled = useAuthStore(s => s.setCrossfadeEnabled);
   const setCrossfadeSecs = useAuthStore(s => s.setCrossfadeSecs);
-  const setGaplessEnabled = useAuthStore(s => s.setGaplessEnabled);
   const setInfiniteQueueEnabled = useAuthStore(s => s.setInfiniteQueueEnabled);
   const normalizationEngine = useAuthStore(s => s.normalizationEngine);
 
@@ -335,9 +333,8 @@ function QueuePanelHostOrSolo() {
             handleCopyQueueShare={handleCopyQueueShare}
             handleClear={handleClear}
             gaplessEnabled={gaplessEnabled}
-            setGaplessEnabled={setGaplessEnabled}
             crossfadeEnabled={crossfadeEnabled}
-            setCrossfadeEnabled={setCrossfadeEnabled}
+            crossfadeTrimSilence={crossfadeTrimSilence}
             crossfadeSecs={crossfadeSecs}
             setCrossfadeSecs={setCrossfadeSecs}
             infiniteQueueEnabled={infiniteQueueEnabled}

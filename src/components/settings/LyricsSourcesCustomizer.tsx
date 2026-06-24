@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { GripVertical, Music2 } from 'lucide-react';
+import { GripVertical } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useDragDrop, useDragSource } from '../../contexts/DragDropContext';
 import { useAuthStore } from '../../store/authStore';
 import type { LyricsSourceId } from '../../store/authStoreTypes';
+import { SettingsToggle } from './SettingsToggle';
 
 const LYRICS_SOURCE_LABEL_KEYS: Record<LyricsSourceId, string> = {
   server:  'settings.lyricsSourceServer',
@@ -47,9 +48,13 @@ export function LyricsSourcesCustomizer() {
   const [dropTarget, setDropTarget] = useState<LyricsDropTarget>(null);
   const dropTargetRef = useRef<LyricsDropTarget>(null);
   const sourcesRef = useRef(lyricsSources);
+  // React Compiler refs rule: ref kept in sync with the latest value for use in effects/handlers/cleanup; not render data.
+  // eslint-disable-next-line react-hooks/refs
   sourcesRef.current = lyricsSources;
 
   useEffect(() => {
+    // React Compiler set-state-in-effect rule: local state synced with store/prop inputs when the effect’s dependencies change.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isPsyDragging) { dropTargetRef.current = null; setDropTarget(null); }
   }, [isPsyDragging]);
 
@@ -98,11 +103,7 @@ export function LyricsSourcesCustomizer() {
   };
 
   return (
-    <section className="settings-section">
-      <div className="settings-section-header">
-        <Music2 size={18} />
-        <h2>{t('settings.lyricsSourcesTitle')}</h2>
-      </div>
+    <>
       <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
         {t('settings.lyricsSourcesDesc')}
       </p>
@@ -110,28 +111,19 @@ export function LyricsSourcesCustomizer() {
       {/* YouLyPlus (karaoke) — independent toggle. When on it is tried first and
           the enabled sources below act as fallback; when off only those sources
           are used. YouLyPlus off + every source off = lyrics fully disabled. */}
-      <div className="settings-card" style={{ marginBottom: '0.75rem' }}>
-        <div className="settings-toggle-row">
-          <div>
-            <div style={{ fontWeight: 500 }}>{t('settings.lyricsYouLyPlus')}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('settings.lyricsYouLyPlusDesc')}</div>
-          </div>
-          <label className="toggle-switch" aria-label={t('settings.lyricsYouLyPlus')}>
-            <input
-              type="checkbox"
-              checked={youLyPlusEnabled}
-              onChange={e => setYouLyPlusEnabled(e.target.checked)}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
+      <div style={{ marginBottom: '0.75rem' }}>
+        <SettingsToggle
+          label={t('settings.lyricsYouLyPlus')}
+          desc={t('settings.lyricsYouLyPlusDesc')}
+          checked={youLyPlusEnabled}
+          onChange={setYouLyPlusEnabled}
+        />
       </div>
 
       <div className="playback-rate-derived" style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 0.4rem' }}>
         {youLyPlusEnabled ? t('settings.lyricsSourcesFallbackHint') : t('settings.lyricsSourcesPrimaryHint')}
       </div>
       <div
-        className="settings-card"
         style={{ padding: '4px 0', marginBottom: '0.75rem' }}
         ref={setContainerEl}
         onMouseMove={handleMouseMove}
@@ -162,18 +154,14 @@ export function LyricsSourcesCustomizer() {
         </div>
 
       {/* Static-only toggle — suppresses line/word tracking in both modes. */}
-      <div className="settings-card" style={{ marginBottom: '0.75rem' }}>
-        <div className="settings-toggle-row">
-          <div>
-            <div style={{ fontWeight: 500 }}>{t('settings.lyricsStaticOnly')}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('settings.lyricsStaticOnlyDesc')}</div>
-          </div>
-          <label className="toggle-switch" aria-label={t('settings.lyricsStaticOnly')}>
-            <input type="checkbox" checked={lyricsStaticOnly} onChange={e => setLyricsStaticOnly(e.target.checked)} />
-            <span className="toggle-track" />
-          </label>
-        </div>
+      <div style={{ marginBottom: '0.75rem' }}>
+        <SettingsToggle
+          label={t('settings.lyricsStaticOnly')}
+          desc={t('settings.lyricsStaticOnlyDesc')}
+          checked={lyricsStaticOnly}
+          onChange={setLyricsStaticOnly}
+        />
       </div>
-    </section>
+    </>
   );
 }

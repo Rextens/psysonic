@@ -31,6 +31,10 @@ export default function Equalizer() {
     const bg = style.getPropertyValue('--bg-app').trim() || '#1e1e2e';
     const text = style.getPropertyValue('--text-muted').trim() || 'rgba(255,255,255,0.4)';
     drawCurve(canvas, gains, accent, bg, text);
+    // theme is an intentional re-create trigger: redraw reads the live CSS custom
+    // properties via getComputedStyle, so it must re-run when the theme changes
+    // even though the `theme` value itself is not referenced here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gains, theme]);
 
   useEffect(() => { redraw(); }, [redraw]);
@@ -55,7 +59,12 @@ export default function Equalizer() {
     return () => details.removeEventListener('toggle', onToggle);
   }, [redraw]);
 
-  const isCustomSaved = activePreset && !BUILTIN_PRESETS.some(p => p.name === activePreset);
+  const isCustomSaved = activePreset !== null && customPresets.some(p => p.name === activePreset);
+  const isBuiltin = activePreset !== null && BUILTIN_PRESETS.some(p => p.name === activePreset);
+  // AutoEQ profiles store the headphone name in activePreset, which is neither a
+  // built-in nor a saved custom preset — surface it in the picker so the active
+  // profile name stays visible after the lookup clears.
+  const isAutoEq = activePreset !== null && !isBuiltin && !isCustomSaved;
   const selectValue = activePreset ?? '__custom__';
 
   const handleSave = () => {
@@ -85,6 +94,7 @@ export default function Equalizer() {
             onChange={v => applyPreset(v)}
             options={[
               ...(activePreset === null ? [{ value: '__custom__', label: t('settings.eqPresetCustom'), disabled: true }] : []),
+              ...(isAutoEq ? [{ value: activePreset!, label: activePreset!, group: t('settings.eqPresetAutoEqGroup') }] : []),
               ...BUILTIN_PRESETS.map(p => ({ value: p.name, label: p.name, group: t('settings.eqPresetBuiltin') })),
               ...customPresets.map(p => ({ value: p.name, label: p.name, group: t('settings.eqPresetCustomGroup') })),
             ]}

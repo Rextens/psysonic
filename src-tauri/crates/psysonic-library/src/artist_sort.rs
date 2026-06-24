@@ -1,0 +1,87 @@
+//! Display-name → sort/bucket key (Navidrome `SanitizeFieldForSortingNoArticle` subset).
+
+/// Navidrome default (`utils/str/sanitize_strings_test.go`).
+pub const DEFAULT_IGNORED_ARTICLES: &str = "The El La Los Las Le Les Os As O A";
+
+/// Strip leading articles from a display name (case-insensitive article match).
+pub fn strip_leading_articles(name: &str, ignored_articles: &str) -> String {
+    let trimmed = name.trim();
+    for article in ignored_articles.split(' ').filter(|s| !s.is_empty()) {
+        let prefix = format!("{} ", article);
+        // `prefix` is ASCII; use `get` so we never slice inside a multibyte rune
+        // (e.g. probing "The " / "El " on CJK names must not panic).
+        let Some(head) = trimmed.get(..prefix.len()) else {
+            continue;
+        };
+        if head.eq_ignore_ascii_case(&prefix) {
+            return trimmed
+                .get(prefix.len()..)
+                .map(str::trim_start)
+                .unwrap_or("")
+                .to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
+/// Lowercase sort key used for SQL `ORDER BY` and UI letter buckets.
+pub fn sort_key_for_display_name(name: &str, ignored_articles: &str) -> String {
+    strip_leading_articles(name, ignored_articles).to_lowercase()
+}
+
+pub fn ignored_articles_or_default(ignored_articles: Option<&str>) -> &str {
+    match ignored_articles.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(s) => s,
+        None => DEFAULT_IGNORED_ARTICLES,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_the_from_beatles() {
+        let key = sort_key_for_display_name("The Beatles", DEFAULT_IGNORED_ARTICLES);
+        assert_eq!(key, "beatles");
+    }
+
+    #[test]
+    fn strips_the_from_kinks() {
+        let key = sort_key_for_display_name("The Kinks", DEFAULT_IGNORED_ARTICLES);
+        assert_eq!(key, "kinks");
+    }
+
+    #[test]
+    fn leaves_non_article_names() {
+        assert_eq!(
+            sort_key_for_display_name("Adele", DEFAULT_IGNORED_ARTICLES),
+            "adele"
+        );
+    }
+
+    #[test]
+    fn custom_ignored_articles() {
+        assert_eq!(
+            sort_key_for_display_name("The Beatles", "The"),
+            "beatles"
+        );
+    }
+
+    #[test]
+    fn does_not_panic_when_article_prefix_aligns_with_multibyte_rune() {
+        // Regression: byte slice `trimmed[..prefix.len()]` panicked on "Elə…"
+        // when probing the "El " ignored article (ə spans bytes 2..4).
+        let key = sort_key_for_display_name("Eləmir", DEFAULT_IGNORED_ARTICLES);
+        assert_eq!(key, "eləmir");
+    }
+
+    #[test]
+    fn does_not_panic_on_cjk_multi_artist_credit_string() {
+        // Discord report (Asra): sync panicked on FromSoftware OST composer list
+        // when probing the 4-byte "The " article prefix against 北村友香…
+        let name = "北村友香, 齋藤司, 桜庭統 & 鈴木伸嘉";
+        let key = sort_key_for_display_name(name, DEFAULT_IGNORED_ARTICLES);
+        assert_eq!(key, name.to_lowercase());
+    }
+}

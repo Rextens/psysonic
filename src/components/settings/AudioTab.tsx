@@ -1,17 +1,20 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Music2, Sliders, Waves } from 'lucide-react';
+import { Blend, Gauge, Sliders, Volume2, Waves } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import Equalizer from '../Equalizer';
 import SettingsSubSection from '../SettingsSubSection';
+import { SettingsGroup } from './SettingsGroup';
+import { SettingsToggle } from './SettingsToggle';
 import { effectiveLoudnessPreAnalysisAttenuationDb } from '../../utils/audio/loudnessPreAnalysisSlider';
 import { useAudioDevicesProbe } from '../../hooks/useAudioDevicesProbe';
+import { IS_MACOS } from '../../utils/platform';
 import { AudioOutputDeviceSection } from './audio/AudioOutputDeviceSection';
 import { NormalizationBlock } from './audio/NormalizationBlock';
-import { Gauge } from 'lucide-react';
-import { PlaybackBehaviorBlock } from './audio/PlaybackBehaviorBlock';
 import { PlaybackRateBlock } from './audio/PlaybackRateBlock';
+import { TrackTransitionsBlock } from './audio/TrackTransitionsBlock';
 import { TrackPreviewsSection } from './audio/TrackPreviewsSection';
+import { HiResCrossfadeResampleBlock } from './audio/HiResCrossfadeResampleBlock';
 
 export function AudioTab() {
   const { t } = useTranslation();
@@ -35,15 +38,41 @@ export function AudioTab() {
 
   return (
     <>
-      <AudioOutputDeviceSection
-        audioDevices={audioDevices}
-        osDefaultAudioDeviceId={osDefaultAudioDeviceId}
-        deviceSwitching={deviceSwitching}
-        devicesLoading={devicesLoading}
-        setDeviceSwitching={setDeviceSwitching}
-        refreshAudioDevices={refreshAudioDevices}
-        t={t}
-      />
+      {/* Output-device picker is hidden on macOS — the stream is pinned to the
+          system default there, so the whole category is gated out. */}
+      {!IS_MACOS && (
+        <AudioOutputDeviceSection
+          audioDevices={audioDevices}
+          osDefaultAudioDeviceId={osDefaultAudioDeviceId}
+          deviceSwitching={deviceSwitching}
+          devicesLoading={devicesLoading}
+          setDeviceSwitching={setDeviceSwitching}
+          refreshAudioDevices={refreshAudioDevices}
+          t={t}
+        />
+      )}
+
+      {/* Normalization — loudness levelling (own category) */}
+      <SettingsSubSection
+        title={t('settings.normalization')}
+        description={t('settings.normalizationDesc')}
+        icon={<Volume2 size={16} />}
+      >
+        <div className="settings-card">
+          <NormalizationBlock preAnalysisEffectiveDb={preAnalysisEffectiveDb} t={t} />
+        </div>
+      </SettingsSubSection>
+
+      {/* Track transitions — crossfade / gapless / AutoDJ (own category) */}
+      <SettingsSubSection
+        title={t('settings.transitionsTitle')}
+        description={t('settings.transitionsDesc')}
+        icon={<Blend size={16} />}
+      >
+        <div className="settings-card">
+          <TrackTransitionsBlock t={t} />
+        </div>
+      </SettingsSubSection>
 
       {/* Native Hi-Res Playback */}
       <SettingsSubSection
@@ -51,21 +80,21 @@ export function AudioTab() {
         icon={<Waves size={16} />}
       >
         <div className="settings-card">
-          <div className="settings-toggle-row">
-            <div>
-              <div style={{ fontWeight: 500 }}>{t('settings.hiResEnabled')}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('settings.hiResDesc')}</div>
-            </div>
-            <label className="toggle-switch" aria-label={t('settings.hiResEnabled')}>
-              <input
-                type="checkbox"
-                checked={auth.enableHiRes}
-                onChange={e => auth.setEnableHiRes(e.target.checked)}
-                id="hires-enabled-toggle"
-              />
-              <span className="toggle-track" />
-            </label>
-          </div>
+          <SettingsGroup>
+            <SettingsToggle
+              desc={t('settings.hiResDesc')}
+              ariaLabel={t('settings.hiResEnabled')}
+              id="hires-enabled-toggle"
+              checked={auth.enableHiRes}
+              onChange={auth.setEnableHiRes}
+            />
+            <HiResCrossfadeResampleBlock
+              enabled={auth.enableHiRes}
+              resampleHz={auth.hiResCrossfadeResampleHz}
+              onResampleHzChange={auth.setHiResCrossfadeResampleHz}
+              t={t}
+            />
+          </SettingsGroup>
         </div>
       </SettingsSubSection>
 
@@ -75,7 +104,9 @@ export function AudioTab() {
         icon={<Sliders size={16} />}
       >
         <div className="settings-card">
-          <Equalizer />
+          <SettingsGroup>
+            <Equalizer />
+          </SettingsGroup>
         </div>
       </SettingsSubSection>
 
@@ -85,21 +116,9 @@ export function AudioTab() {
         icon={<Gauge size={16} />}
       >
         <div className="settings-card">
-          <PlaybackRateBlock t={t} />
-        </div>
-      </SettingsSubSection>
-
-      {/* Replay Gain + Crossfade + Gapless */}
-      <SettingsSubSection
-        title={t('settings.playbackTitle')}
-        icon={<Music2 size={16} />}
-      >
-        <div className="settings-card">
-          <NormalizationBlock preAnalysisEffectiveDb={preAnalysisEffectiveDb} t={t} />
-
-          <div className="divider" />
-
-          <PlaybackBehaviorBlock t={t} />
+          <SettingsGroup>
+            <PlaybackRateBlock t={t} />
+          </SettingsGroup>
         </div>
       </SettingsSubSection>
 

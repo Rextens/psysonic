@@ -129,6 +129,79 @@
   color: var(--text-muted);
 }
 
+.crossfade-popover-modes {
+  display: flex;
+  gap: 4px;
+}
+
+.crossfade-popover-mode {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 5px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.crossfade-popover-mode:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  color: var(--text-primary);
+}
+
+.crossfade-popover-mode.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-app);
+}
+
+/* Compact dropdown menu reusing the .crossfade-popover box (the playlist
+   save/load submenu). Items stack vertically as left-aligned rows. */
+.queue-menu {
+  width: 150px;
+  padding: 6px;
+  gap: 2px;
+  /* Open rightward so the menu stays inside the queue panel — the playlist
+     button sits on the left, where the inherited right:0 would push it out
+     under the main container. */
+  left: 0;
+  right: auto;
+}
+
+.queue-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.queue-menu-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.queue-menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .queue-toolbar-sep {
   width: 1px;
   height: 18px;
@@ -160,6 +233,10 @@
   cursor: default;
 }
 .queue-round-btn.active {
+  color: var(--bg-app);
+  background: var(--accent);
+}
+.queue-round-btn.active:hover:not(:disabled) {
   color: var(--bg-app);
   background: var(--accent);
 }

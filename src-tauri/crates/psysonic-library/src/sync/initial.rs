@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use psysonic_core::server_http::ServerHttpRegistry;
 use psysonic_integration::navidrome::queries::nd_list_songs_internal;
 use psysonic_integration::subsonic::SubsonicClient;
 use serde_json::Value;
@@ -109,6 +110,7 @@ pub struct InitialSyncRunner<'a> {
     store: &'a LibraryStore,
     subsonic: &'a SubsonicClient,
     navidrome: Option<NavidromeProbeCredentials>,
+    http_registry: Option<Arc<ServerHttpRegistry>>,
     server_id: String,
     library_scope: String,
     capability_flags: CapabilityFlags,
@@ -132,6 +134,7 @@ impl<'a> InitialSyncRunner<'a> {
             store,
             subsonic,
             navidrome: None,
+            http_registry: None,
             server_id: server_id.into(),
             library_scope: library_scope.into(),
             capability_flags,
@@ -151,6 +154,11 @@ impl<'a> InitialSyncRunner<'a> {
 
     pub fn with_navidrome_credentials(mut self, creds: NavidromeProbeCredentials) -> Self {
         self.navidrome = Some(creds);
+        self
+    }
+
+    pub fn with_http_registry(mut self, registry: Option<Arc<ServerHttpRegistry>>) -> Self {
+        self.http_registry = registry;
         self
     }
 
@@ -580,6 +588,8 @@ impl<'a> InitialSyncRunner<'a> {
         let cancel = self.cancel.clone();
         let sleep_enabled = self.sleep_enabled;
         let creds = creds.clone();
+        let http_registry = self.http_registry.clone();
+        let server_id = self.server_id.clone();
         let mut queue = LinearPrefetchQueue::new(&budget, batch_size, offset);
 
         loop {
@@ -590,6 +600,8 @@ impl<'a> InitialSyncRunner<'a> {
             queue.pump(|| self.check_cancellation(), |off| {
                 let creds = creds.clone();
                 let cancel = cancel.clone();
+                let http_registry = http_registry.clone();
+                let server_id = server_id.clone();
                 tokio::spawn(async move {
                     retry_fetch(
                         sleep_enabled,
@@ -597,6 +609,8 @@ impl<'a> InitialSyncRunner<'a> {
                         || async {
                             let end = off.saturating_add(batch_size);
                             let response = nd_list_songs_internal(
+                                http_registry.as_deref(),
+                                Some(&server_id),
                                 &creds.server_url,
                                 &creds.bearer_token,
                                 "id",
@@ -671,6 +685,8 @@ impl<'a> InitialSyncRunner<'a> {
             self,
             || {
                 nd_list_songs_internal(
+                    self.http_registry.as_deref(),
+                    Some(&self.server_id),
                     &creds.server_url,
                     &creds.bearer_token,
                     "id",
@@ -1179,7 +1195,7 @@ impl<'a> InitialSyncRunner<'a> {
 
     async fn run_artist_pass(
         &self,
-        sync_state: &SyncStateRepository<'_>,
+        _sync_state: &SyncStateRepository<'_>,
     ) -> Result<(), SyncError> {
         let scope = self.library_scope_opt();
         let artists = retry_with_backoff(
@@ -1190,11 +1206,12 @@ impl<'a> InitialSyncRunner<'a> {
         .await
         .ok();
         if let Some(index) = artists {
-            if let Some(ms) = index.last_modified_ms {
-                sync_state
-                    .set_artists_last_modified_ms(&self.server_id, &self.library_scope, ms)
-                    .map_err(SyncError::Storage)?;
-            }
+            super::artist_index::apply_artist_index(
+                self.store,
+                &self.server_id,
+                &self.library_scope,
+                &index,
+            )?;
         }
         Ok(())
     }
@@ -1227,13 +1244,7 @@ fn is_empty_cursor(v: &Value) -> bool {
     matches!(v, Value::Object(o) if o.is_empty())
 }
 
-fn now_unix_ms() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis().min(i64::MAX as u128) as i64)
-        .unwrap_or(0)
-}
+use super::now_unix_ms;
 
 /// Wrap an async closure in §6.8 backoff. Retries on `SyncError::Transport`
 /// up to `MAX_ATTEMPTS_PER_BATCH`, sleeping per the backoff schedule

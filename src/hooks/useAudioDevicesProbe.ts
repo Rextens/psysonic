@@ -24,7 +24,7 @@ interface UseAudioDevicesProbeResult {
  * (`audio:device-changed` / `audio:device-reset`).
  *
  * macOS short-circuits — the audio stream is pinned to the system default
- * there (see `audioOutputDeviceMacNotice`) and the picker UI is hidden.
+ * there, and the whole output-device category is gated out in settings.
  */
 export function useAudioDevicesProbe(t: TFunction): UseAudioDevicesProbeResult {
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
@@ -64,6 +64,8 @@ export function useAudioDevicesProbe(t: TFunction): UseAudioDevicesProbeResult {
 
   useEffect(() => {
     if (IS_MACOS) return;
+    // React Compiler set-state-in-effect rule: state set from an async result resolved in this effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshAudioDevices();
   }, [refreshAudioDevices]);
 

@@ -6,6 +6,8 @@ import {
   defaultSmartFilters, type SmartFilters,
 } from '../../utils/playlist/playlistsSmart';
 import { offlineActionPolicy, type OfflineActionPolicy } from '../../utils/offline/offlineActionPolicy';
+import PlaylistsNewFolderButton from './PlaylistsNewFolderButton';
+import PlaylistsFolderViewToggle from './PlaylistsFolderViewToggle';
 
 interface Props {
   selectionMode: boolean;
@@ -46,7 +48,7 @@ export default function PlaylistsHeader({
           ? t('playlists.selectionCount', { count: selectedIds.size })
           : t('playlists.title')}
       </h1>
-      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-start' }}>
         {policy.canEditPlaylist && !(selectionMode && selectedIds.size > 0) && (<>
             {creating ? (
               <>
@@ -87,6 +89,8 @@ export default function PlaylistsHeader({
             )}
           </>
         )}
+        {!(selectionMode && selectedIds.size > 0) && <PlaylistsFolderViewToggle />}
+        {!(selectionMode && selectedIds.size > 0) && <PlaylistsNewFolderButton />}
         {selectionMode && selectedIds.size > 0 && (() => {
           const deletableCount = selectedPlaylists.filter(isPlaylistDeletable).length;
           return (

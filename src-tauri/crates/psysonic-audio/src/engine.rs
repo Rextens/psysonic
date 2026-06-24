@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use rodio::Player;
+use tauri::Manager;
 
 use super::state::{ChainedInfo, PreloadedTrack, StreamCompletedSpill};
 
@@ -60,6 +61,15 @@ pub struct AudioEngine {
     pub(crate) stream_playback_armed: Arc<AtomicBool>,
     pub crossfade_enabled: Arc<AtomicBool>,
     pub crossfade_secs: Arc<AtomicU32>,
+    /// AutoDJ: when true, the progress task does NOT fire its autonomous
+    /// `crossfade_secs`-before-end `audio:ended` timer — the JS A-tail logic
+    /// drives every advance (gated on the next track being playable). Prevents
+    /// the engine from starting a still-buffering next track and fading over it
+    /// (an audible "jump"); cold next-track degrades to a clean sequential start.
+    pub(crate) autodj_suppress_autocrossfade: Arc<AtomicBool>,
+    /// AutoDJ interrupt prep: `audio_begin_outgoing_fade` volume-ducked the
+    /// outgoing sink; block normalization/volume ramps until the handoff swap.
+    pub(crate) interrupt_outgoing_duck_active: Arc<AtomicBool>,
     pub fading_out_sink: Arc<Mutex<Option<Arc<Player>>>>,
     /// When true, audio_play chains sources to the existing Sink instead of
     /// creating a new one, achieving sample-accurate gapless transitions.
@@ -475,6 +485,8 @@ pub fn create_engine() -> (AudioEngine, std::thread::JoinHandle<()>) {
         stream_playback_armed: Arc::new(AtomicBool::new(true)),
         crossfade_enabled: Arc::new(AtomicBool::new(false)),
         crossfade_secs: Arc::new(AtomicU32::new(3.0f32.to_bits())),
+        autodj_suppress_autocrossfade: Arc::new(AtomicBool::new(false)),
+        interrupt_outgoing_duck_active: Arc::new(AtomicBool::new(false)),
         fading_out_sink: Arc::new(Mutex::new(None)),
         gapless_enabled: Arc::new(AtomicBool::new(false)),
         normalization_engine: Arc::new(AtomicU32::new(0)),
@@ -558,4 +570,84 @@ pub fn refresh_http_user_agent(state: &AudioEngine, ua: &str) {
     if let Ok(mut slot) = state.http_client.write() {
         *slot = client;
     }
+}
+
+pub(crate) fn apply_playback_request_headers(
+    registry: Option<&psysonic_core::server_http::ServerHttpRegistry>,
+    server_id: Option<&str>,
+    url: &str,
+    req: reqwest::RequestBuilder,
+) -> reqwest::RequestBuilder {
+    if let Some(reg) = registry {
+        if let Some(sid) = server_id.filter(|s| !s.is_empty()) {
+            return reg.apply_for_http_url(sid, url, req);
+        }
+        if let Some(ctx) = reg.get_for_server_url(url) {
+            return psysonic_core::server_http::apply_server_headers_for_http_url(req, &ctx, url);
+        }
+    }
+    req
+}
+
+/// Custom HTTP headers for reverse-proxy gates — cloned into background download tasks.
+#[derive(Clone, Default)]
+pub(crate) struct PlaybackHttpHeaders {
+    registry: Option<Arc<psysonic_core::server_http::ServerHttpRegistry>>,
+    server_id: Option<String>,
+}
+
+impl PlaybackHttpHeaders {
+    pub fn from_app(app: &tauri::AppHandle, server_id: Option<&str>) -> Self {
+        Self {
+            registry: app
+                .try_state::<Arc<psysonic_core::server_http::ServerHttpRegistry>>()
+                .map(|s| Arc::clone(&*s)),
+            server_id: server_id.filter(|s| !s.is_empty()).map(str::to_string),
+        }
+    }
+
+    pub fn apply(&self, url: &str, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        apply_playback_request_headers(
+            self.registry.as_deref(),
+            self.server_id.as_deref(),
+            url,
+            req,
+        )
+    }
+}
+
+pub(crate) fn scoped_http_get(
+    state: &AudioEngine,
+    registry: Option<&psysonic_core::server_http::ServerHttpRegistry>,
+    server_id: Option<&str>,
+    url: &str,
+) -> reqwest::RequestBuilder {
+    apply_playback_request_headers(
+        registry,
+        server_id,
+        url,
+        audio_http_client(state).get(url),
+    )
+}
+
+/// Resolve registry + server id for playback/preload HTTP GETs.
+pub(crate) fn playback_scoped_get(
+    state: &AudioEngine,
+    app: &tauri::AppHandle,
+    url: &str,
+    server_id: Option<&str>,
+) -> reqwest::RequestBuilder {
+    let registry = app
+        .try_state::<Arc<psysonic_core::server_http::ServerHttpRegistry>>()
+        .map(|s| Arc::clone(&*s));
+    let sid = server_id
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| state.current_playback_server_id.lock().unwrap().clone());
+    scoped_http_get(
+        state,
+        registry.as_deref(),
+        sid.as_deref(),
+        url,
+    )
 }

@@ -20,6 +20,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
+use psysonic_core::server_http::ServerHttpRegistry;
 use psysonic_integration::navidrome::queries::nd_list_songs_internal;
 use psysonic_integration::subsonic::SubsonicClient;
 use serde_json::Value;
@@ -71,6 +72,7 @@ pub struct DeltaSyncRunner<'a> {
     store: &'a LibraryStore,
     subsonic: &'a SubsonicClient,
     navidrome: Option<NavidromeProbeCredentials>,
+    http_registry: Option<Arc<ServerHttpRegistry>>,
     server_id: String,
     library_scope: String,
     capability_flags: CapabilityFlags,
@@ -95,6 +97,7 @@ impl<'a> DeltaSyncRunner<'a> {
             store,
             subsonic,
             navidrome: None,
+            http_registry: None,
             server_id: server_id.into(),
             library_scope: library_scope.into(),
             capability_flags,
@@ -108,6 +111,11 @@ impl<'a> DeltaSyncRunner<'a> {
 
     pub fn with_navidrome_credentials(mut self, creds: NavidromeProbeCredentials) -> Self {
         self.navidrome = Some(creds);
+        self
+    }
+
+    pub fn with_http_registry(mut self, registry: Option<Arc<ServerHttpRegistry>>) -> Self {
+        self.http_registry = registry;
         self
     }
 
@@ -204,8 +212,20 @@ impl<'a> DeltaSyncRunner<'a> {
             }
         }
 
-        // DS-9 — stamp watermarks.
+        // DS-9 — stamp watermarks + refresh artist browse index when applicable.
         if let Some(ms) = probe.next_artists_watermark {
+            let scope = self.library_scope_opt();
+            if let Ok(index) = self.subsonic.get_artists(scope).await {
+                super::artist_index::apply_artist_index(
+                    self.store,
+                    &self.server_id,
+                    &self.library_scope,
+                    &index,
+                )?;
+            }
+            // Advance the watermark to the probed value regardless of the index
+            // refresh result — a failed/empty `getArtists` must not force a full
+            // refetch on every delta. Wins over the index's own last-modified.
             sync_state
                 .set_artists_last_modified_ms(&self.server_id, &self.library_scope, ms)
                 .map_err(SyncError::Storage)?;
@@ -384,6 +404,8 @@ impl<'a> DeltaSyncRunner<'a> {
                 self,
                 || {
                     nd_list_songs_internal(
+                        self.http_registry.as_deref(),
+                        Some(&self.server_id),
                         &creds.server_url,
                         &creds.bearer_token,
                         "updated_at",
@@ -529,13 +551,7 @@ struct DeltaPollOutcome {
     next_artists_watermark: Option<i64>,
 }
 
-fn now_unix_ms() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis().min(i64::MAX as u128) as i64)
-        .unwrap_or(0)
-}
+use super::now_unix_ms;
 
 async fn retry_with_backoff<'a, F, FFut, T, E>(
     runner: &DeltaSyncRunner<'a>,

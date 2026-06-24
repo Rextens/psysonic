@@ -2,8 +2,10 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen, emitTo } from '@tauri-apps/api/event';
 import { usePlayerStore } from '../store/playerStore';
 import { useAuthStore } from '../store/authStore';
+import { setTransitionMode, type TransitionMode } from './playback/playbackTransition';
 import { resolveQueueTrack } from './library/queueTrackView';
 import type { SubsonicOpenArtistRef } from '../api/subsonicTypes';
+import type { Track } from '../store/playerStoreTypes';
 
 export const MINI_WINDOW_LABEL = 'mini';
 
@@ -31,6 +33,8 @@ export interface MiniSyncPayload {
   volume: number;
   gaplessEnabled: boolean;
   crossfadeEnabled: boolean;
+  crossfadeSecs: number;
+  crossfadeTrimSilence: boolean;
   infiniteQueueEnabled: boolean;
   isMobile: false;
 }
@@ -41,7 +45,7 @@ export type MiniControlAction =
   | 'prev'
   | 'show-main';
 
-function toMini(t: any): MiniTrackInfo {
+function toMini(t: Track): MiniTrackInfo {
   return {
     id: t.id,
     title: t.title,
@@ -83,6 +87,8 @@ function snapshot(): MiniSyncPayload {
     volume: s.volume,
     gaplessEnabled: !!a.gaplessEnabled,
     crossfadeEnabled: !!a.crossfadeEnabled,
+    crossfadeSecs: a.crossfadeSecs,
+    crossfadeTrimSilence: !!a.crossfadeTrimSilence,
     infiniteQueueEnabled: !!a.infiniteQueueEnabled,
     isMobile: false,
   };
@@ -114,6 +120,8 @@ export function initMiniPlayerBridgeOnMain(): () => void {
       payload.volume,
       payload.gaplessEnabled,
       payload.crossfadeEnabled,
+      payload.crossfadeSecs,
+      payload.crossfadeTrimSilence,
       payload.infiniteQueueEnabled,
       queueIds,
     ].join('|');
@@ -139,6 +147,8 @@ export function initMiniPlayerBridgeOnMain(): () => void {
   const unsubAuth = useAuthStore.subscribe((state, prev) => {
     if (state.gaplessEnabled !== prev.gaplessEnabled
       || state.crossfadeEnabled !== prev.crossfadeEnabled
+      || state.crossfadeSecs !== prev.crossfadeSecs
+      || state.crossfadeTrimSilence !== prev.crossfadeTrimSilence
       || state.infiniteQueueEnabled !== prev.infiniteQueueEnabled) {
       push();
     }
@@ -239,18 +249,16 @@ export function initMiniPlayerBridgeOnMain(): () => void {
 
   // Gapless ↔ Crossfade are mutually exclusive. Bridge handles the exclusion
   // so the mini doesn't need to know about both states to act.
-  const gaplessUnlisten = listen<{ value: boolean }>('mini:set-gapless', (e) => {
-    const v = !!e.payload?.value;
-    const a = useAuthStore.getState();
-    if (v) a.setCrossfadeEnabled(false);
-    a.setGaplessEnabled(v);
+  const transitionModeUnlisten = listen<{ value: string }>('mini:set-transition-mode', (e) => {
+    const v = e.payload?.value;
+    const modes: TransitionMode[] = ['none', 'gapless', 'crossfade', 'autodj'];
+    if (modes.includes(v as TransitionMode)) setTransitionMode(v as TransitionMode);
   });
 
-  const crossfadeUnlisten = listen<{ value: boolean }>('mini:set-crossfade', (e) => {
-    const v = !!e.payload?.value;
-    const a = useAuthStore.getState();
-    if (v) a.setGaplessEnabled(false);
-    a.setCrossfadeEnabled(v);
+  const crossfadeSecsUnlisten = listen<{ value: number }>('mini:set-crossfade-secs', (e) => {
+    const v = e.payload?.value;
+    if (typeof v !== 'number' || !Number.isFinite(v)) return;
+    useAuthStore.getState().setCrossfadeSecs(Math.max(0.1, Math.min(10, v)));
   });
 
   const infiniteQueueUnlisten = listen<{ value: boolean }>('mini:set-infinite-queue', (e) => {
@@ -282,8 +290,8 @@ export function initMiniPlayerBridgeOnMain(): () => void {
     shuffleUnlisten.then(fn => fn()).catch(() => {});
     undoQueueUnlisten.then(fn => fn()).catch(() => {});
     redoQueueUnlisten.then(fn => fn()).catch(() => {});
-    gaplessUnlisten.then(fn => fn()).catch(() => {});
-    crossfadeUnlisten.then(fn => fn()).catch(() => {});
+    transitionModeUnlisten.then(fn => fn()).catch(() => {});
+    crossfadeSecsUnlisten.then(fn => fn()).catch(() => {});
     infiniteQueueUnlisten.then(fn => fn()).catch(() => {});
     songInfoUnlisten.then(fn => fn()).catch(() => {});
   };

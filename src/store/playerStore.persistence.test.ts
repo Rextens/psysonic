@@ -23,6 +23,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Listing every export the store uses keeps the override stable.
 vi.mock('@/api/subsonic', () => ({
   pingWithCredentials: vi.fn(async () => ({ ok: true })),
+  pingWithCredentialsForProfile: vi.fn(async () => ({ ok: true })),
+  scheduleInstantMixProbeForServer: vi.fn(),
 }));
 vi.mock('@/api/subsonicPlayQueue', () => ({
   savePlayQueue: vi.fn(async () => undefined),
@@ -57,6 +59,8 @@ vi.mock('@/utils/playback/playbackServer', () => ({
   bindQueueServerForPlayback: vi.fn(),
   clearQueueServerForPlayback: vi.fn(),
   playbackServerDiffersFromActive: () => false,
+  filterQueueRefsForPlaybackServer: (refs: { serverId: string; trackId: string }[]) => refs,
+  playbackProfileIdForTrack: (track: { serverId?: string } | null) => track?.serverId ?? 'srv-test',
   playbackCoverArtForId: (id: string, size: number) => ({
     src: `https://mock/cover/${id}?size=${size}`,
     cacheKey: `mock:cover:${id}:${size}`,

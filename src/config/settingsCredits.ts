@@ -166,6 +166,16 @@ const CONTRIBUTOR_ENTRIES = [
       'OpenSubsonic playbackReport — live now-playing state, gliding position bar, and immediate pause/resume on Navidrome ≥0.62 (PR #1080)',
       'Playback speed follow-up — Semitones varispeed strategy, two-decimal speed label, per-strategy tooltips, and Advanced fine-step toggle (PR #1084)',
       'Streamed Opus/Ogg seeking via on-demand HTTP Range fetches — seek mid-stream without a full pre-download (PR #1110)',
+      'AutoDJ — content-aware crossfade: waveform-driven silence trim, content-driven overlap, scenario-A self-fade, readiness gate + engine auto-crossfade suppression (PR #1122)',
+      'AutoDJ — smooth skip and interrupt blend: manual/out-of-queue crossfade, loud→loud ~2s advance, cold-target prep duck + deferred player-bar handoff (PR #1128)',
+      'Play queue sync — manual pull via connection indicator, idle auto-pull, multi-server push filter, flush-on-server-switch (PR #1131)',
+      'Niri compositor tiling WM detection (PR #1127)',
+      'Local library index: Navidrome ignored-articles artist/composer letter buckets (name_sort + server ignoredArticles), idempotent migration with safe open/swap and poisoned-lock recovery (PR #1145)',
+      'All Albums browse: compilation and favorites filters in slice mode — skip redundant client comp filter, route favorites through getStarred2, pre-index page scan, offline isCompilation from tracks (PR #1151)',
+      'Custom HTTP headers for reverse-proxy gates — per-server header editor, TS/Rust registry sync, full playback/sync/cover path coverage, log redaction (PR #1156)',
+      'CI: ESLint strict workflow and path-aware ci-ok merge gate (PR #1170)',
+      'Hi-Res transition blend rate — configurable 44.1/88.2/96 kHz resampling for crossfade, AutoDJ, and gapless when adjacent tracks differ in sample rate (PR #1171)',
+      'AutoDJ overlap cap — Auto (12 s content cap) or Limit (2–30 s slider, default 15 s) in track-transition settings; Orbit sync + engine override up to 30 s (PR #1173)',
     ],
   },
   {
@@ -371,6 +381,12 @@ const CONTRIBUTOR_ENTRIES = [
       'Performance Probe: opt-in thread-group CPU poll toggle and includeThreadGroups IPC fix (PR #891)',
       'Queue: switchable display mode — Queue (upcoming only) vs Playlist (full list), with header toggle and settings entry (PR #922)',
       'Community Theme Store: semantic-token refactor, dedicated Themes tab with day/night scheduler, install/update/uninstall, local .zip import, free-form community themes (safety floor + state-reactive styling), and per-theme download counts with popularity/newest/name sorting; 80+ palettes moved to an on-demand CDN repo (PR #1009, #1011, #1012, #1013, #1014, #1015, #1016, #1018, #1020, #1036)',
+      'AutoDJ as a standalone playback mode — own toolbar button and audio-settings entry, mutually exclusive with Crossfade and Gapless via a shared transition helper, combined playlist save/load submenu, and boxed playback settings sections (PR #1124)',
+      'Settings refactor — reusable boxed panels (SettingsGroup/SettingsToggle) rolled across every tab, Normalization and Track transitions promoted to their own Audio categories, a unified Queue Settings group on Personalisation, and the Audio Output Device category gated out on macOS (PR #1126, #1130)',
+      'Artist artwork from fanart.tv — opt-in fullscreen background + artist-header banner, off by default (PR #1137)',
+      'Per-device equalizer profiles — opt-in, remembers and restores the EQ for each audio output device (PR #1146)',
+      'Hungarian (Magyar) translation (PR #1149)',
+      'Theme scheduler — follow the OS light/dark setting as an alternative to the time-based day/night schedule (PR #1163)',
     ],
   },
   {
@@ -385,6 +401,13 @@ const CONTRIBUTOR_ENTRIES = [
     since: '1.48.0',
     contributions: [
       'Linux auto-install script — fix curl | sudo bash URL capture bug (PR #1079)',
+    ],
+  },
+  {
+    github: 'Soli0222',
+    since: '1.49.0',
+    contributions: [
+      'Japanese (ja) full UI translation (PR #1134)',
     ],
   },
 ] as const;

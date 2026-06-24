@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Check, FolderOpen, Infinity, MoveRight, Save, Share2, Shuffle, Trash2, Waves,
+  Blend, Check, FolderOpen, Infinity as InfinityIcon, ListMusic, MoveRight, Save, Share2, Shuffle, Trash2, Waves,
 } from 'lucide-react';
 import type { TFunction } from 'i18next';
 import type { QueueItemRef } from '../../store/playerStoreTypes';
@@ -8,6 +8,8 @@ import type {
   QueueToolbarButtonConfig,
   QueueToolbarButtonId,
 } from '../../store/queueToolbarStore';
+import { getTransitionMode, setTransitionMode } from '../../utils/playback/playbackTransition';
+import { useOrbitStore } from '../../store/orbitStore';
 
 interface Props {
   queue: QueueItemRef[];
@@ -20,9 +22,8 @@ interface Props {
   handleCopyQueueShare: () => void;
   handleClear: () => void;
   gaplessEnabled: boolean;
-  setGaplessEnabled: (v: boolean) => void;
   crossfadeEnabled: boolean;
-  setCrossfadeEnabled: (v: boolean) => void;
+  crossfadeTrimSilence: boolean;
   crossfadeSecs: number;
   setCrossfadeSecs: (v: number) => void;
   infiniteQueueEnabled: boolean;
@@ -33,26 +34,44 @@ interface Props {
 export function QueueToolbar({
   queue, activePlaylist, saveState, toolbarButtons, shuffleQueue,
   handleSave, handleLoad, handleCopyQueueShare, handleClear,
-  gaplessEnabled, setGaplessEnabled, crossfadeEnabled, setCrossfadeEnabled,
-  crossfadeSecs, setCrossfadeSecs, infiniteQueueEnabled, setInfiniteQueueEnabled,
+  gaplessEnabled, crossfadeEnabled, crossfadeTrimSilence,
+  crossfadeSecs, setCrossfadeSecs,
+  infiniteQueueEnabled, setInfiniteQueueEnabled,
   t,
 }: Props) {
   const [showCrossfadePopover, setShowCrossfadePopover] = useState(false);
+  const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
   const crossfadeBtnRef = useRef<HTMLButtonElement>(null);
   const crossfadePopoverRef = useRef<HTMLDivElement>(null);
+  const playlistBtnRef = useRef<HTMLButtonElement>(null);
+  const playlistMenuRef = useRef<HTMLDivElement>(null);
+
+  const mode = getTransitionMode({ gaplessEnabled, crossfadeEnabled, crossfadeTrimSilence });
+  // Transitions are host-controlled while a guest in a live session — disable
+  // the quick-toggles so the user can't fight the per-tick sync.
+  const transitionsLocked = useOrbitStore(
+    s => s.role === 'guest' && (s.phase === 'active' || s.phase === 'joining'),
+  );
+  const transitionLockTip = transitionsLocked ? t('settings.transitionsHostControlled') : undefined;
 
   useEffect(() => {
-    if (!showCrossfadePopover) return;
+    if (!showCrossfadePopover && !showPlaylistMenu) return;
     const handle = (e: MouseEvent) => {
+      const target = e.target as Node;
       if (
-        crossfadeBtnRef.current?.contains(e.target as Node) ||
-        crossfadePopoverRef.current?.contains(e.target as Node)
-      ) return;
-      setShowCrossfadePopover(false);
+        showCrossfadePopover &&
+        !crossfadeBtnRef.current?.contains(target) &&
+        !crossfadePopoverRef.current?.contains(target)
+      ) setShowCrossfadePopover(false);
+      if (
+        showPlaylistMenu &&
+        !playlistBtnRef.current?.contains(target) &&
+        !playlistMenuRef.current?.contains(target)
+      ) setShowPlaylistMenu(false);
     };
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
-  }, [showCrossfadePopover]);
+  }, [showCrossfadePopover, showPlaylistMenu]);
 
   return (
     <div className="queue-toolbar">
@@ -66,24 +85,40 @@ export function QueueToolbar({
                 <Shuffle size={13} />
               </button>
             );
-          case 'save':
+          case 'playlist':
             return (
-              <button
-                key={btn.id}
-                className={`queue-round-btn${saveState === 'saved' ? ' active' : ''}`}
-                onClick={handleSave}
-                disabled={saveState === 'saving'}
-                data-tooltip={activePlaylist ? `${t('queue.updatePlaylist')}: ${activePlaylist.name}` : t('queue.savePlaylist')}
-                aria-label={t('queue.savePlaylist')}
-              >
-                {saveState === 'saved' ? <Check size={13} /> : <Save size={13} />}
-              </button>
-            );
-          case 'load':
-            return (
-              <button key={btn.id} className="queue-round-btn" onClick={handleLoad} data-tooltip={t('queue.loadPlaylist')} aria-label={t('queue.loadPlaylist')}>
-                <FolderOpen size={13} />
-              </button>
+              <div key={btn.id} style={{ position: 'relative' }}>
+                <button
+                  ref={playlistBtnRef}
+                  className={`queue-round-btn${showPlaylistMenu ? ' active' : ''}`}
+                  onClick={() => { setShowCrossfadePopover(false); setShowPlaylistMenu(v => !v); }}
+                  data-tooltip={showPlaylistMenu ? undefined : t('queue.playlist')}
+                  aria-label={t('queue.playlist')}
+                >
+                  <ListMusic size={13} />
+                </button>
+                {showPlaylistMenu && (
+                  <div className="crossfade-popover queue-menu" ref={playlistMenuRef}>
+                    <button
+                      type="button"
+                      className="queue-menu-item"
+                      onClick={() => { handleSave(); setShowPlaylistMenu(false); }}
+                      disabled={saveState === 'saving'}
+                    >
+                      {saveState === 'saved' ? <Check size={14} /> : <Save size={14} />}
+                      {activePlaylist ? `${t('queue.updatePlaylist')}: ${activePlaylist.name}` : t('queue.savePlaylist')}
+                    </button>
+                    <button
+                      type="button"
+                      className="queue-menu-item"
+                      onClick={() => { handleLoad(); setShowPlaylistMenu(false); }}
+                    >
+                      <FolderOpen size={14} />
+                      {t('queue.loadPlaylist')}
+                    </button>
+                  </div>
+                )}
+              </div>
             );
           case 'share':
             return (
@@ -109,9 +144,10 @@ export function QueueToolbar({
             return (
               <button
                 key={btn.id}
-                className={`queue-round-btn${gaplessEnabled ? ' active' : ''}`}
-                onClick={() => { setCrossfadeEnabled(false); setShowCrossfadePopover(false); setGaplessEnabled(!gaplessEnabled); }}
-                data-tooltip={t('queue.gapless')}
+                className={`queue-round-btn${mode === 'gapless' ? ' active' : ''}`}
+                onClick={() => { setShowCrossfadePopover(false); setTransitionMode(mode === 'gapless' ? 'none' : 'gapless'); }}
+                disabled={transitionsLocked}
+                data-tooltip={transitionLockTip ?? t('queue.gapless')}
                 aria-label={t('queue.gapless')}
               >
                 <MoveRight size={13} />
@@ -122,18 +158,20 @@ export function QueueToolbar({
               <div key={btn.id} style={{ position: 'relative' }}>
                 <button
                   ref={crossfadeBtnRef}
-                  className={`queue-round-btn${crossfadeEnabled || showCrossfadePopover ? ' active' : ''}`}
+                  className={`queue-round-btn${mode === 'crossfade' || showCrossfadePopover ? ' active' : ''}`}
                   onClick={() => {
-                    if (crossfadeEnabled) {
-                      setCrossfadeEnabled(false);
-                      setShowCrossfadePopover(false);
-                    } else {
-                      setGaplessEnabled(false);
-                      setCrossfadeEnabled(true);
-                      setShowCrossfadePopover(true);
-                    }
+                    // Left click toggles classic crossfade on/off. Right click
+                    // opens the seconds popover.
+                    setShowPlaylistMenu(false);
+                    setTransitionMode(mode === 'crossfade' ? 'none' : 'crossfade');
                   }}
-                  data-tooltip={showCrossfadePopover ? undefined : t('queue.crossfade')}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setShowPlaylistMenu(false);
+                    setShowCrossfadePopover(v => !v);
+                  }}
+                  disabled={transitionsLocked}
+                  data-tooltip={transitionLockTip ?? (showCrossfadePopover ? undefined : t('queue.crossfade'))}
                   aria-label={t('queue.crossfade')}
                 >
                   <Waves size={13} />
@@ -153,9 +191,10 @@ export function QueueToolbar({
                       value={crossfadeSecs}
                       onChange={e => {
                         setCrossfadeSecs(parseFloat(e.target.value));
-                        setCrossfadeEnabled(true);
+                        setTransitionMode('crossfade');
                       }}
                       className="crossfade-popover-slider"
+                      aria-label={t('queue.crossfade')}
                     />
                     <div className="crossfade-popover-range">
                       <span>0.1s</span><span>10s</span>
@@ -163,6 +202,19 @@ export function QueueToolbar({
                   </div>
                 )}
               </div>
+            );
+          case 'autodj':
+            return (
+              <button
+                key={btn.id}
+                className={`queue-round-btn${mode === 'autodj' ? ' active' : ''}`}
+                onClick={() => { setShowCrossfadePopover(false); setShowPlaylistMenu(false); setTransitionMode(mode === 'autodj' ? 'none' : 'autodj'); }}
+                disabled={transitionsLocked}
+                data-tooltip={transitionLockTip ?? t('queue.autoDj')}
+                aria-label={t('queue.autoDj')}
+              >
+                <Blend size={13} />
+              </button>
             );
           case 'infinite':
             return (
@@ -173,7 +225,7 @@ export function QueueToolbar({
                 data-tooltip={t('queue.infiniteQueue')}
                 aria-label={t('queue.infiniteQueue')}
               >
-                <Infinity size={13} />
+                <InfinityIcon size={13} />
               </button>
             );
           default:

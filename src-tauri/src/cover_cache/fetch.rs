@@ -1,4 +1,5 @@
 use reqwest::Client;
+use psysonic_core::server_http::ServerHttpRegistry;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use url::Url;
 
@@ -19,12 +20,15 @@ fn random_salt() -> String {
     format!("{nanos:x}")
 }
 
-pub fn build_cover_art_url(
+/// Build a token-authed Subsonic REST URL `{rest_base}/rest/{endpoint}.view`
+/// with the standard `u/t/s/v/c` auth params plus the given `extra` query
+/// pairs. Shared by all Subsonic GETs (cover art, `getArtistInfo2`, …).
+pub(crate) fn build_subsonic_url(
     rest_base: &str,
+    endpoint: &str,
     username: &str,
     password: &str,
-    cover_art_id: &str,
-    size: u32,
+    extra: &[(&str, &str)],
 ) -> String {
     let base = rest_base.trim_end_matches('/');
     let api_base = if base.ends_with("/rest") {
@@ -34,23 +38,41 @@ pub fn build_cover_art_url(
     };
     let salt = random_salt();
     let token = format!("{:x}", md5::compute(format!("{password}{salt}")));
-    let endpoint = format!("{api_base}/getCoverArt.view");
+    let endpoint_url = format!("{api_base}/{endpoint}.view");
     let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-    serializer.append_pair("id", cover_art_id);
-    serializer.append_pair("size", &size.to_string());
+    for (k, v) in extra {
+        serializer.append_pair(k, v);
+    }
     serializer.append_pair("u", username);
     serializer.append_pair("t", &token);
     serializer.append_pair("s", &salt);
     serializer.append_pair("v", "1.16.1");
     serializer.append_pair("c", SUBSONIC_CLIENT);
     let query = serializer.finish();
-    match Url::parse(&endpoint) {
+    match Url::parse(&endpoint_url) {
         Ok(mut url) => {
             url.set_query(Some(&query));
             url.to_string()
         }
-        Err(_) => format!("{endpoint}?{query}"),
+        Err(_) => format!("{endpoint_url}?{query}"),
     }
+}
+
+pub fn build_cover_art_url(
+    rest_base: &str,
+    username: &str,
+    password: &str,
+    cover_art_id: &str,
+    size: u32,
+) -> String {
+    let size_s = size.to_string();
+    build_subsonic_url(
+        rest_base,
+        "getCoverArt",
+        username,
+        password,
+        &[("id", cover_art_id), ("size", &size_s)],
+    )
 }
 
 /// Outcome of a single fetch attempt: transient errors are worth retrying,
@@ -62,8 +84,21 @@ enum FetchAttempt {
     Permanent(String),
 }
 
-async fn fetch_cover_once(client: &Client, url: &str) -> FetchAttempt {
-    let resp = match client.get(url).send().await {
+async fn fetch_cover_once(
+    client: &Client,
+    url: &str,
+    registry: Option<&ServerHttpRegistry>,
+    server_ref: Option<&str>,
+) -> FetchAttempt {
+    let mut req = client.get(url);
+    if let Some(reg) = registry {
+        if let Some(sid) = server_ref.filter(|s| !s.is_empty()) {
+            req = reg.apply_for_http_url(sid, url, req);
+        } else if let Some(ctx) = reg.get_for_server_url(url) {
+            req = psysonic_core::server_http::apply_server_headers_for_http_url(req, &ctx, url);
+        }
+    }
+    let resp = match req.send().await {
         Ok(r) => r,
         // Connection reset / timeout / DNS — transient under server load.
         Err(e) => return FetchAttempt::Transient(e.to_string()),
@@ -83,10 +118,15 @@ async fn fetch_cover_once(client: &Client, url: &str) -> FetchAttempt {
     }
 }
 
-pub async fn fetch_cover_bytes(client: &Client, url: &str) -> Result<Vec<u8>, String> {
+pub async fn fetch_cover_bytes(
+    client: &Client,
+    url: &str,
+    registry: Option<&ServerHttpRegistry>,
+    server_ref: Option<&str>,
+) -> Result<Vec<u8>, String> {
     let mut last_err = String::from("cover fetch failed");
     for attempt in 0..COVER_FETCH_ATTEMPTS {
-        match fetch_cover_once(client, url).await {
+        match fetch_cover_once(client, url, registry, server_ref).await {
             FetchAttempt::Ok(bytes) => return Ok(bytes),
             FetchAttempt::Permanent(e) => return Err(e),
             FetchAttempt::Transient(e) => {

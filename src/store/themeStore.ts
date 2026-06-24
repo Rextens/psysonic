@@ -18,11 +18,17 @@ export type BuiltinTheme =
  */
 export type Theme = BuiltinTheme | (string & {});
 
+/** Trigger for the day/night theme switch. */
+export type ThemeSchedulerMode = 'time' | 'system';
+
 interface ThemeState {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   enableThemeScheduler: boolean;
   setEnableThemeScheduler: (v: boolean) => void;
+  /** What drives the day/night switch: a clock schedule or the OS theme. */
+  schedulerMode: ThemeSchedulerMode;
+  setSchedulerMode: (v: ThemeSchedulerMode) => void;
   themeDay: string;
   setThemeDay: (v: string) => void;
   themeNight: string;
@@ -43,10 +49,24 @@ interface ThemeState {
   setExpandReplayGain: (v: boolean) => void;
   floatingPlayerBar: boolean;
   setFloatingPlayerBar: (v: boolean) => void;
+  /** Master toggle for external artist artwork (fanart.tv). Off by default (§20). */
+  externalArtworkEnabled: boolean;
+  setExternalArtworkEnabled: (v: boolean) => void;
+  /** Optional personal fanart.tv API key (BYOK) — sent in addition to the app key (§22). */
+  externalArtworkByok: string;
+  setExternalArtworkByok: (v: string) => void;
 }
 
-export function getScheduledTheme(state: Pick<ThemeState, 'enableThemeScheduler' | 'theme' | 'themeDay' | 'themeNight' | 'timeDayStart' | 'timeNightStart'>): string {
+export function getScheduledTheme(
+  state: Pick<
+    ThemeState,
+    'enableThemeScheduler' | 'schedulerMode' | 'theme' | 'themeDay' | 'themeNight' | 'timeDayStart' | 'timeNightStart'
+  >,
+  systemPrefersDark = false,
+): string {
   if (!state.enableThemeScheduler) return state.theme;
+  // Follow the OS theme: dark → night theme, light → day theme.
+  if (state.schedulerMode === 'system') return systemPrefersDark ? state.themeNight : state.themeDay;
   const now = new Date();
   const nowMins = now.getHours() * 60 + now.getMinutes();
   const [dh, dm] = state.timeDayStart.split(':').map(Number);
@@ -66,6 +86,8 @@ export const useThemeStore = create<ThemeState>()(
       setTheme: (theme) => set({ theme }),
       enableThemeScheduler: false,
       setEnableThemeScheduler: (v) => set({ enableThemeScheduler: v }),
+      schedulerMode: 'time',
+      setSchedulerMode: (v) => set({ schedulerMode: v }),
       themeDay: 'latte',
       setThemeDay: (v) => set({ themeDay: v }),
       themeNight: 'mocha',
@@ -86,6 +108,10 @@ export const useThemeStore = create<ThemeState>()(
       setExpandReplayGain: (v) => set({ expandReplayGain: v }),
       floatingPlayerBar: false,
       setFloatingPlayerBar: (v) => set({ floatingPlayerBar: v }),
+      externalArtworkEnabled: false,
+      setExternalArtworkEnabled: (v) => set({ externalArtworkEnabled: v }),
+      externalArtworkByok: '',
+      setExternalArtworkByok: (v) => set({ externalArtworkByok: v }),
     }),
     {
       name: 'psysonic_theme',

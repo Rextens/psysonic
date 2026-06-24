@@ -106,6 +106,7 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .manage(audio_engine)
+        .manage(Arc::new(psysonic_core::server_http::ServerHttpRegistry::new()))
         .manage(ShortcutMap::default())
         .manage(discord::DiscordState::new())
         .manage(Arc::new(tokio::sync::Semaphore::new(MAX_DL_CONCURRENCY)) as DownloadSemaphore)
@@ -238,7 +239,10 @@ pub fn run() {
                             let flags = psysonic_library::sync::capability::CapabilityFlags::new(
                                 flags_bits,
                             );
-                            let subsonic = psysonic_integration::subsonic::SubsonicClient::new(
+                            let registry = app_for_sched.state::<Arc<psysonic_core::server_http::ServerHttpRegistry>>();
+                            let subsonic = psysonic_integration::subsonic::subsonic_client_with_registry(
+                                Some(registry.as_ref()),
+                                &session.server_id,
                                 session.base_url.clone(),
                                 session.username.clone(),
                                 session.password.clone(),
@@ -251,7 +255,8 @@ pub fn run() {
                                     scope.clone(),
                                     flags,
                                 )
-                                .with_playback_hint(hint);
+                                .with_playback_hint(hint)
+                                .with_http_registry(Some(Arc::clone(&registry)));
                             if let Some(tok) = session.navidrome_token.clone() {
                                 sched = sched.with_navidrome_credentials(
                                     psysonic_library::sync::capability::NavidromeProbeCredentials {
@@ -682,6 +687,9 @@ pub fn run() {
             migration_inspect,
             migration_run,
             resolve_host_addresses,
+            server_http_context_sync,
+            server_http_context_sync_all,
+            server_http_context_clear,
             psysonic_syncfs::sync::batch::calculate_sync_payload,
             exit_app,
             cli_publish_player_snapshot,
@@ -735,6 +743,8 @@ pub fn run() {
             audio::preview::audio_preview_set_volume,
             audio::mix_commands::audio_set_crossfade,
             audio::mix_commands::audio_set_gapless,
+            audio::mix_commands::audio_begin_outgoing_fade,
+            audio::mix_commands::audio_set_autodj_suppress,
             audio::mix_commands::audio_set_normalization,
             audio::device_commands::audio_list_devices,
             audio::device_commands::audio_canonicalize_selected_device,
@@ -841,6 +851,7 @@ pub fn run() {
             cover_cache::cover_cache_configure,
             cover_cache::cover_cache_clear,
             cover_cache::cover_cache_clear_server,
+            cover_cache::cover_cache_purge_external,
             cover_cache::cover_cache_rename_server_bucket,
             cover_cache::cover_cache_stats_server,
             cover_cache::cover_cache_get_pipeline_queue_stats,

@@ -4,7 +4,18 @@ import { useEffect, useRef } from 'react';
 import { useOrbitStore } from '../store/orbitStore';
 import { useAuthStore } from '../store/authStore';
 import { usePlayerStore } from '../store/playerStore';
-import { readOrbitState } from '../utils/orbit';
+import {
+  readOrbitState,
+  applyOrbitTransitionSettings,
+  saveGuestTransitionsOnce,
+  restoreGuestTransitions,
+  ensureTrackInOutbox,
+  planPendingResends,
+  forgetPendingSuggestion,
+  resetPendingResendState,
+} from '../utils/orbit';
+import { showToast } from '../utils/ui/toast';
+import i18n from '../i18n';
 import { estimateLivePosition, type OrbitState } from '../api/orbit';
 import { pushOrbitEvent } from '../utils/orbitDiag';
 import { useOrbitOutboxHeartbeat } from './useOrbitOutboxHeartbeat';
@@ -61,6 +72,9 @@ export function useOrbitGuest(): void {
 
     let cancelled = false;
     lastAppliedRef.current = null;
+    // Snapshot the user's own transition prefs once, before the first tick
+    // adopts the host's — restored on leave by this effect's cleanup.
+    saveGuestTransitionsOnce();
 
     /**
      * Load `trackId` into the local player and seek to the host's live
@@ -184,6 +198,13 @@ export function useOrbitGuest(): void {
 
       useOrbitStore.getState().setState(state);
 
+      // Adopt the host's track-transition prefs for the session — idempotent,
+      // only writes when they actually changed. Absent on pre-transition-sync
+      // hosts, in which case the guest keeps its own.
+      if (state.settings?.transitions) {
+        applyOrbitTransitionSettings(state.settings.transitions);
+      }
+
       // Auto-leave after prolonged host silence. We keep polling as long as
       // state reads succeed (short reconnects are silent), but if the host
       // hasn't written a fresh state blob for > HOST_TIMEOUT_MS we treat the
@@ -205,6 +226,26 @@ export function useOrbitGuest(): void {
         for (const q of (state.playQueue ?? [])) landed.add(q.trackId);
         if (state.currentTrack) landed.add(state.currentTrack.trackId);
         useOrbitStore.getState().reconcilePendingSuggestions(landed);
+        landed.forEach(forgetPendingSuggestion);
+
+        // Mitigate the outbox lost-update race: a suggestion the host hasn't
+        // recorded (absent from state.queue, where every *received* submission
+        // lands) past a grace window was likely wiped by a racing sweep-clear
+        // — re-send it (the host dedupes, so this is idempotent). Give up +
+        // toast on ones that never land so the row doesn't hang forever.
+        const stillPending = useOrbitStore.getState().pendingSuggestions;
+        if (stillPending.length > 0 && outboxPlaylistId) {
+          const recorded = new Set(state.queue.map(q => q.trackId));
+          const plan = planPendingResends(stillPending, recorded);
+          for (const trackId of plan.resend) {
+            void ensureTrackInOutbox(outboxPlaylistId, trackId).catch(() => {});
+          }
+          if (plan.giveUp.length > 0) {
+            useOrbitStore.getState().reconcilePendingSuggestions(new Set(plan.giveUp));
+            plan.giveUp.forEach(forgetPendingSuggestion);
+            showToast(i18n.t('orbit.toastSuggestLost'), 3500, 'error');
+          }
+        }
       }
 
       // Host signalled session end: surface via `phase`, let the UI handle
@@ -357,7 +398,14 @@ export function useOrbitGuest(): void {
     return () => {
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
+      // Leaving / session ended → give the user their own transition prefs back.
+      restoreGuestTransitions();
+      resetPendingResendState();
     };
+    // outboxPlaylistId is read inside the tick loop at call time; the loop is
+    // intentionally (re)started only on session activation / playlist change, not
+    // when the outbox id updates mid-session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, sessionPlaylistId]);
 
   // Outbox heartbeat — shared with the host hook; the guest's outbox is keyed

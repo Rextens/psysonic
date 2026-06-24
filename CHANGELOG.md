@@ -20,6 +20,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Theme versions now show in the store (next to the author) and under each installed community theme; when an update is available, the store shows the installed → available version.
 * New store filter to show only animated themes or only static ones, next to the existing mode and sort controls.
 
+### Playlist folders
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1119](https://github.com/Psychotoxical/psysonic/pull/1119)**, suggested by [@SilverWolf24](https://github.com/SilverWolf24)
+
+* Organise your playlists into folders on the Playlists page and in the sidebar — create folders, drag playlists into them (or use the right-click "Move to folder" menu), rename, collapse and switch between the folder view and a single flat list. Folders are saved locally on this device only, since the Subsonic API has no folder support.
+
+### AutoDJ — content-aware crossfade
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1122](https://github.com/Psychotoxical/psysonic/pull/1122) and [@Psychotoxical](https://github.com/Psychotoxical), PR [#1124](https://github.com/Psychotoxical/psysonic/pull/1124)**
+
+* New **AutoDJ** crossfade mode. Instead of a fixed crossfade time, it blends what you actually hear: it trims the dead silence at the end of one track and the start of the next, and picks the overlap from the music itself — a track that fades out rides its own fade while the next one rises underneath, and two tracks that both start/end loud get a short musical blend instead of an abrupt cut. Works most reliably with the Hot playback cache enabled, since the next track's audio needs to be ready for the blend.
+* AutoDJ is now its own mode rather than a sub-option of Crossfade — its own button in the queue toolbar and its own entry in the audio settings. Crossfade, AutoDJ and Gapless are mutually exclusive (only one active at a time) under a single Off / Gapless / Crossfade / AutoDJ picker, the playback settings are regrouped into clearer Normalization / Track transitions / Queue behaviour panels, and the queue toolbar's separate Save and Load playlist buttons are combined into one Playlist menu (existing toolbar layouts are preserved). Off by default; classic Crossfade is unchanged.
+
+### AutoDJ — smooth skip and interrupt blend
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1128](https://github.com/Psychotoxical/psysonic/pull/1128)**
+
+* New **Smooth skip** toggle under Settings → Audio → Track transitions (on by default when AutoDJ is active). Manual Next/Previous and picking a track from the library, an album, or the infinite queue crossfade from where you are listening instead of hard-cutting.
+* Loud→loud queue advances use a consistent ~2s musical blend; manual skips cap at the same length so quiet intros are not drowned out.
+* When the target track is not buffered yet, the player briefly ducks the outgoing track while preloading; the player bar keeps showing the current song until the handoff so titles and artwork do not flicker or pause spuriously.
+* During an active blend, the play/pause button shows a pulsing Blend icon.
+
+### Play queue sync — cross-device handoff
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1131](https://github.com/Psychotoxical/psysonic/pull/1131)**, closes [#1129](https://github.com/Psychotoxical/psysonic/issues/1129)
+
+* Manual **pull** from the header connection indicator (LED + sync ring): click to fetch the active server's play queue when it differs from the local player; no-op when already in sync. Yellow LED when browse server ≠ playback server (e.g. after switching servers).
+* **Idle auto-pull** when paused/stopped for 30+ seconds on a single-server queue (active = playback): polls every 10s and applies server changes.
+* **Push** now sends only tracks owned by the playback server (fixes mixed-server queues). Switching browse servers flushes the old server's queue slice without auto-pull.
+
+### Japanese and Hungarian translations
+
+**By [@Soli0222](https://github.com/Soli0222), PR [#1134](https://github.com/Psychotoxical/psysonic/pull/1134)**
+
+* Full Japanese (日本語) UI translation — selectable from the language picker on the Settings and Login screens.
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1149](https://github.com/Psychotoxical/psysonic/pull/1149)**, a gift to [@falu](https://github.com/falu) for the first independent review of Psysonic
+
+* Psysonic is now available in **Hungarian (Magyar)** — pick it from the language menu on the Settings and Login screens.
+
+### Artist artwork from fanart.tv
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1137](https://github.com/Psychotoxical/psysonic/pull/1137)**
+
+* New opt-in **External Artwork Scraper** (Settings → Integrations, off by default): artist imagery from fanart.tv — a 16:9 background on the fullscreen player and a wide banner on the artist page — with Navidrome staying the canonical cover. Optional personal key; turning it off removes the fetched images again.
+
+### Remember the equalizer per audio output device
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1146](https://github.com/Psychotoxical/psysonic/pull/1146)**, suggested by [@JustBuddy](https://github.com/JustBuddy)
+
+* New opt-in **Remember EQ per device** toggle (Settings → Audio → Audio Output Device, off by default): the equalizer profile — bands, pre-gain, enabled state and active preset — is saved per audio output device and restored automatically when you switch devices.
+
+### Custom HTTP headers for gated servers
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1156](https://github.com/Psychotoxical/psysonic/pull/1156)**, closes [#1095](https://github.com/Psychotoxical/psysonic/issues/1095)
+
+* Per-server **custom HTTP headers** in Settings → Servers for reverse-proxy gates (Cloudflare Access, Pangolin, and similar): add name/value pairs, choose whether they apply to the local URL, public URL, or both on dual-address profiles.
+* Headers attach to every user-server HTTP path — library sync, playback, covers, offline download, Navidrome admin, capability probes, and share-link preview — without putting secrets in invite links or magic strings.
+* Gate header values are redacted from application logs.
+
+### Orbit — shared crossfade, gapless and AutoDJ
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1158](https://github.com/Psychotoxical/psysonic/pull/1158)**
+
+* In an Orbit session the host's track-transition settings — crossfade, gapless or AutoDJ, including the crossfade length and smooth-skip — now apply to everyone, so guests blend between tracks the same way the host does instead of each person using their own. Your own settings are restored when you leave.
+* While you are a guest in a session, the transition controls in Settings → Audio and the queue toolbar are shown as host-controlled.
+
+### Theme scheduler — follow the system theme
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1163](https://github.com/Psychotoxical/psysonic/pull/1163)**, suggested by [@mokazemi](https://github.com/mokazemi)
+
+* The theme scheduler can now switch your day/night theme pair based on your operating system's light/dark setting, in addition to the existing time-of-day schedule. Pick the trigger with a new Time of Day / System Theme switch; in system mode the two pickers read as Light and Dark theme. On Linux setups where the OS does not signal the change live, a hint notes it applies after restarting the app.
+
+### Hi-Res transition blend rate
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1171](https://github.com/Psychotoxical/psysonic/pull/1171)**
+
+* **Settings → Audio → Native Hi-Res** gains a blend-rate picker (44.1 / 88.2 / 96 kHz, default 44.1 kHz) for transitions when adjacent tracks have different sample rates, with a note that resampling uses extra CPU and memory.
+* **Crossfade / AutoDJ:** both sides resample to the chosen rate; the output stream reopens when needed and the outgoing track rebuilds from cache so mixed 88.2 ↔ 44.1 kHz transitions no longer tear mid-fade.
+* **Gapless:** the next track chains at the blend rate and the current track realigns when the stream Hz differs, instead of falling back to a hard cut.
+
+### AutoDJ — configurable overlap cap
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1173](https://github.com/Psychotoxical/psysonic/pull/1173)**
+
+* **Settings → Audio → Track transitions → AutoDJ:** choose **Auto** (content-driven overlap, up to 12 s) or **Limit** (slider 2–30 s, default 15 s when enabled) to cap how long AutoDJ may overlap tracks.
+* The cap applies to end-of-track planning, JS auto-advance, smooth skip, and Orbit transition sync; the audio engine accepts dynamic overlap overrides up to 30 s.
+
+
+## Changed
+
+### Settings — consistent grouped layout
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1126](https://github.com/Psychotoxical/psysonic/pull/1126) and PR [#1130](https://github.com/Psychotoxical/psysonic/pull/1130)**
+
+* The settings tabs now group related controls into clearly bordered, labelled panels for a more consistent, easier-to-scan layout — across Appearance, System, Audio, Storage, Library, Integrations, Music Network, Lyrics, Personalisation, Input and Themes. Standalone toggles are left as they were, and a few duplicated section titles are gone.
+* The **Lucky Mix menu** toggle moved from the Library tab to the sidebar customizer, alongside the other navigation toggles.
+* The **Native Hi-Res Playback** description now explains what turning it on actually does — play each track at its original sample rate, matching the audio device to the file, instead of resampling everything to 44.1 kHz. The old wording described the off state and read as if the option forced 44.1 kHz.
+* **Settings → Audio**: **Normalization** and **Track transitions** are now their own top-level categories (directly under Audio Output Device) instead of being grouped together inside one *Playback* section.
+* **Settings → Personalisation** gains a **Queue Settings** category that brings the queue display mode, the queue toolbar customizer, and the **Preserve "Play Next" order** toggle (moved here from Audio) together in one place.
+* On macOS, the **Audio Output Device** category is now hidden rather than showing a notice — playback there always follows the system output device.
+
 
 ## Fixed
 
@@ -35,11 +137,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * The Previous / Play-Pause / Next buttons in the Windows taskbar thumbnail preview (the popup shown when hovering the taskbar icon) had stopped appearing. They are back, and the middle button's icon again reflects the current playback state.
 
-### Album order within each artist when sorting by artist
+### Album sorting within artists
 
-**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1115](https://github.com/Psychotoxical/psysonic/pull/1115)**, suggested by [@kingley82](https://github.com/kingley82)
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1115](https://github.com/Psychotoxical/psysonic/pull/1115), PR [#1120](https://github.com/Psychotoxical/psysonic/pull/1120)**, suggested by [@kingley82](https://github.com/kingley82)
 
 * When browsing albums sorted by artist, each artist's albums appeared in an arbitrary order. They are now ordered A–Z by album title within each artist.
+* New **Artist → Year** sort option groups albums by artist and orders each artist's albums chronologically (oldest first).
 
 ### "Add to playlist" from the player bar added the whole album
 
@@ -47,6 +150,154 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Right-clicking the current track in the player bar opened an album menu, so "Add to playlist" added the entire album instead of the playing song. The player bar menu now acts on the current song.
 
+### Security — transitive form-data CRLF injection (GHSA-hmw2-7cc7-3qxx)
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1118](https://github.com/Psychotoxical/psysonic/pull/1118)**
+
+* Bumped transitive `form-data` 4.0.5 → 4.0.6 (via axios) to close Dependabot alert [#18](https://github.com/Psychotoxical/psysonic/security/dependabot/18) for CRLF injection in multipart field names (CVE-2026-12143). Psysonic only uses axios for GET requests, so exploitability was low; the lockfile bump clears the advisory.
+
+### Live listener badge stale when the popover was closed
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1125](https://github.com/Psychotoxical/psysonic/pull/1125)**
+
+* The Live header badge only refreshed `getNowPlaying` while the "Who is listening?" popover was open, so the listener count could stay stale or hidden until opened. Poll every 30 s while the window is visible (10 s while the popover is open); background fetches are silent so the header does not flash a loading state.
+
+### Niri compositor tiling WM detection
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1127](https://github.com/Psychotoxical/psysonic/pull/1127)**
+
+* Niri is now recognized as a tiling window manager (`NIRI_SOCKET`, `XDG_CURRENT_DESKTOP=niri`), so it gets the same custom title bar, window decorations, and mini-player behavior as Hyprland and Sway instead of being treated like a floating desktop.
+
+### Play queue sync — follow-up fixes
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1132](https://github.com/Psychotoxical/psysonic/pull/1132)**
+
+* After cross-device idle pull while paused, a local queue change (e.g. enqueue) could be overwritten when auto-pull ran again. Idle auto-pull now stops on local mutations until manual sync from the header; the connection LED turns yellow while auto-sync is paused.
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1133](https://github.com/Psychotoxical/psysonic/pull/1133)**
+
+* After editing the queue while paused (yellow sync LED), pressing Play only resumed audio and could leave the server on another device's queue until the debounced push fired. Resume and play-from-queue now flush the local play queue immediately and clear the yellow indicator when the push succeeds.
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1135](https://github.com/Psychotoxical/psysonic/pull/1135)**
+
+* The header connection probe now retries a failed ping twice (2 s apart) before marking the server unreachable, so a single dropped packet on an otherwise fine link no longer flips the LED to disconnected.
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1136](https://github.com/Psychotoxical/psysonic/pull/1136)**
+
+* Track-advance queue pushes no longer suspend idle auto-pull, so the connection LED does not flash yellow on every song change. Yellow sync still appears after a local queue edit while paused; it clears while audio is playing.
+
+### Favorites — bulk add to playlist and play/enqueue selected
+
+**By [@cucadmuh](https://github.com/cucadmuh), reported by zunoz on the Psysonic Discord, PR [#1140](https://github.com/Psychotoxical/psysonic/pull/1140)**
+
+* Bulk **Add to playlist** no longer cleared the selection on `mousedown` before the click ran, so chosen tracks were not actually added.
+* With rows selected, **Play all** / **Add all to queue** become **Play selected** / **Add selected to queue** and act on the checked tracks only.
+* Bulk add now snapshots every checked row when the picker opens so all selected tracks land in the playlist, not just the last one.
+
+### Update notification — clearer popup on Linux
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1142](https://github.com/Psychotoxical/psysonic/pull/1142)**, reported by zunoz on Discord
+
+* The "new version available" popup no longer shows blurry, unfocused text on some Linux setups (the background blur could bleed onto the dialog). The version arrow now lines up with the heading, and the Skip / Remind me later buttons read clearly — Remind me later is the highlighted action when there's no in-app installer.
+
+### Artists letter index — Navidrome ignored articles and library index
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1145](https://github.com/Psychotoxical/psysonic/pull/1145)**, closes [#1144](https://github.com/Psychotoxical/psysonic/issues/1144)
+
+* On the **Artists** page (and **Composers**), the A–Z filter now groups names like Navidrome: leading articles such as **The** are skipped before picking the letter — **The Beatles** lands under **B**, not **T**. The bucket follows the server's own `ignoredArticles` list when the local index knows it.
+* The local library index stores `name_sort` and the server's `ignoredArticles` from `getArtists`, sorts browse SQL by the sort key (now indexed), and repairs stale keys once on upgrade.
+* The local library database now opens, swaps and restores through one pipeline, so a swapped or restored file always picks up pending migrations and one-time repairs instead of serving a stale schema.
+* A panic or a poisoned lock in one query no longer wedges the whole library index — connections recover and report the error instead, and the new sort-key migration applies idempotently so a half-applied upgrade self-heals on the next launch.
+
+### Equalizer — the active AutoEQ profile name stays visible
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1147](https://github.com/Psychotoxical/psysonic/pull/1147)**
+
+* After applying an AutoEQ headphone profile, the preset picker now shows the profile name under an AutoEQ group instead of going blank, and the delete button no longer appears for AutoEQ profiles (where it did nothing).
+
+### All Albums — compilation and favorites filters
+
+**By [@cucadmuh](https://github.com/cucadmuh), reported by [@bcorporaal](https://github.com/bcorporaal), PR [#1151](https://github.com/Psychotoxical/psysonic/pull/1151)**, closes [#1143](https://github.com/Psychotoxical/psysonic/issues/1143)
+
+* **Only compilations** no longer shows a handful of albums after the local index already filtered them — slice mode skips the redundant client pass that dropped rows without `isCompilation` on the DTO.
+* **Favorites** on All Albums uses the same `getStarred2` catalog path as the Favorites page instead of the empty sparse `album` table browse.
+* Pre-index compilation filtering auto-paginates again in network page mode; offline library aggregates set `isCompilation` from track tags.
+
+### Playlists header buttons clipped at narrow widths
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1153](https://github.com/Psychotoxical/psysonic/pull/1153)**
+
+* The action buttons at the top of the Playlists page (New Playlist, New Smart Playlist, folder controls, Select) could run off-screen and get cut off when the window was narrow or the queue panel was open. They now wrap onto multiple rows, left-aligned.
+
+### Orbit — session reliability fixes
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PRs [#1155](https://github.com/Psychotoxical/psysonic/pull/1155), [#1157](https://github.com/Psychotoxical/psysonic/pull/1157), [#1159](https://github.com/Psychotoxical/psysonic/pull/1159)**
+
+* Opening Psysonic on a second device no longer deletes a session that is still live on another device.
+* Long sessions keep updating for guests instead of silently stalling once the shared state grew too large.
+* Radio no longer adds unrelated tracks to a guest's queue mid-session.
+* Auto-shuffle and auto-approve are independent again — toggling one in an older session no longer flips the other.
+* A session is kept within its guest limit even when several people join at once.
+* Guest suggestions no longer get silently lost or stuck on "waiting on host": overlapping host updates are serialised, a lost suggestion is re-sent (with a notice if it still can't get through), and a flaky join no longer leaves a duplicate suggestion list on the server.
+* Pasted invites are rejected unless they point at a normal http/https server address.
+
+### macOS dock icon larger than native apps
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1169](https://github.com/Psychotoxical/psysonic/pull/1169)**, closes [#1166](https://github.com/Psychotoxical/psysonic/issues/1166)
+
+* On macOS the dock icon was rendered edge-to-edge and looked larger than other apps; it is now padded to Apple's icon grid so it matches native sizing.
+
+### Artist header showing the plain image instead of the external background
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1172](https://github.com/Psychotoxical/psysonic/pull/1172)**
+
+* On the artist page, when an artist had an external background image (from fanart.tv) but no banner, the header showed the plain Navidrome artist image instead of the background — even though the fullscreen player used the background correctly. The header now falls back banner → background → Navidrome image as intended. The background also sits a little higher so band members' heads aren't cropped on wide screens.
+
+### Context menu "Play Now" and resize behaviour
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1174](https://github.com/Psychotoxical/psysonic/pull/1174)**, reported by [@peri4ko](https://github.com/peri4ko)
+
+* On the Playlists page, right-clicking a playlist and choosing "Play Now" only opened the playlist instead of playing it. It now starts playback.
+* Resizing the window while a context menu was open could leave the menu stranded and drifting off-screen. The context menu now closes when the window is resized.
+
+### Genres page kept empty genres after tag changes
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1176](https://github.com/Psychotoxical/psysonic/pull/1176)**, closes [#1162](https://github.com/Psychotoxical/psysonic/issues/1162)
+
+* After retagging a track and resyncing the library, genres with no remaining albums could still appear on the Genres page until restart. The local genre catalog now counts only live indexed tracks, filters zero-count genres, and the Genres page refreshes when library sync finishes.
+
+### AutoDJ — last track in the queue was cut short
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1183](https://github.com/Psychotoxical/psysonic/pull/1183)**
+
+* With AutoDJ active and no next track to blend into, the engine could still fire the crossfade end timer and trim the final song. The last track now plays through to real source exhaustion.
+
+### Play queue sync — idle pull rewound after the queue finished
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1183](https://github.com/Psychotoxical/psysonic/pull/1183)**
+
+* After the last track ended (repeat off), idle auto-pull could restore an earlier server position from the last debounced push and seek backward. The client now flushes end-of-track position to the server and skips idle auto-pull until playback resumes, the queue is edited, or the user pulls manually.
+
+## Under the Hood
+
+### ESLint setup and a strict lint pass over the frontend
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1165](https://github.com/Psychotoxical/psysonic/pull/1165)**
+
+* Added an ESLint config and `npm run lint`, and brought `src/` to zero errors and warnings under the strict React-hooks ruleset. Developer-only — no user-facing behaviour change.
+
+### CI — ESLint gate and path-aware ci-ok merge check
+
+**By [@cucadmuh](https://github.com/cucadmuh), PR [#1170](https://github.com/Psychotoxical/psysonic/pull/1170)**
+
+* Strict `npm run lint` runs in CI on frontend path filters via a dedicated workflow parallel to the existing frontend test jobs.
+* The `ci-ok` check waits for every applicable test and lint job on a PR (frontend and/or Rust, depending on changed paths) and blocks merge when any required job failed or did not finish in time.
+
+### Settings — consistent design for the Audio sub-sections
+
+**By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1175](https://github.com/Psychotoxical/psysonic/pull/1175)**
+
+* The AutoDJ overlap-cap and the Native Hi-Res blend-rate options in Settings → Audio now sit in the same bordered sub-card the Normalization options use, and the Hi-Res section no longer shows a double border.
 
 ## [1.48.1] - 2026-06-15
 

@@ -20,6 +20,7 @@ import {
   ARTIST_LIST_ROW_EST,
 } from '../utils/componentHelpers/artistsHelpers';
 import { useArtistsFiltering } from '../hooks/useArtistsFiltering';
+import { useLibraryIgnoredArticles } from '../hooks/useLibraryIgnoredArticles';
 import { useArtistsBrowseCatalog } from '../hooks/useArtistsBrowseCatalog';
 import { useBrowseArtistTextSearch } from '../hooks/useBrowseArtistTextSearch';
 import { useMainstageInpageHeaderTight } from '../hooks/useMainstageInpageHeaderTight';
@@ -136,9 +137,11 @@ export default function Artists() {
 
   const selectedArtists = artists.filter(a => selectedIds.has(a.id));
 
+  const ignoredArticles = useLibraryIgnoredArticles(serverId, indexEnabled);
+
   const {
     filtered, visible, hasMore, groups, letters, artistListFlatRows,
-  } = useArtistsFiltering({ artists, filter: effectiveFilter, letterFilter, starredOnly, visibleCount, viewMode });
+  } = useArtistsFiltering({ artists, filter: effectiveFilter, letterFilter, starredOnly, visibleCount, viewMode, ignoredArticles });
 
   const pendingLetterMatch =
     browseMode === 'slice'
@@ -264,6 +267,8 @@ export default function Artists() {
     },
   );
 
+  // React Compiler incompatible-library rule: third-party hook/value the compiler cannot analyze; usage is correct.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const artistListVirtualizer = useVirtualizer({
     count:
       artistBrowsePlainLayout || viewMode !== 'list' ? 0 : artistListFlatRows.length,

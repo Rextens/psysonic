@@ -1,4 +1,8 @@
 import { clampStoredLoudnessPreAnalysisAttenuationRefDb } from '../utils/audio/loudnessPreAnalysisSlider';
+import {
+  sanitizeAutodjOverlapCapMode,
+  sanitizeAutodjOverlapCapSec,
+} from '../utils/playback/autodjOverlapCap';
 import { DEFAULT_LOUDNESS_PRE_ANALYSIS_ATTENUATION_DB } from './authStoreDefaults';
 import { usePlayerStore } from './playerStore';
 import type { AuthState } from './authStoreTypes';
@@ -27,8 +31,13 @@ export function createAudioSettingsActions(set: SetState): Pick<
   | 'setReplayGainFallbackDb'
   | 'setCrossfadeEnabled'
   | 'setCrossfadeSecs'
+  | 'setCrossfadeTrimSilence'
+  | 'setAutodjSmoothSkip'
+  | 'setAutodjOverlapCapMode'
+  | 'setAutodjOverlapCapSec'
   | 'setGaplessEnabled'
   | 'setEnableHiRes'
+  | 'setHiResCrossfadeResampleHz'
   | 'setAudioOutputDevice'
 > {
   return {
@@ -67,8 +76,13 @@ export function createAudioSettingsActions(set: SetState): Pick<
     },
     setCrossfadeEnabled: (v) => set({ crossfadeEnabled: v }),
     setCrossfadeSecs: (v) => set({ crossfadeSecs: v }),
+    setCrossfadeTrimSilence: (v) => set({ crossfadeTrimSilence: v }),
+    setAutodjSmoothSkip: (v) => set({ autodjSmoothSkip: v }),
+    setAutodjOverlapCapMode: (v) => set({ autodjOverlapCapMode: sanitizeAutodjOverlapCapMode(v) }),
+    setAutodjOverlapCapSec: (v) => set({ autodjOverlapCapSec: sanitizeAutodjOverlapCapSec(v) }),
     setGaplessEnabled: (v) => set({ gaplessEnabled: v }),
     setEnableHiRes: (v) => set({ enableHiRes: v }),
+    setHiResCrossfadeResampleHz: (v) => set({ hiResCrossfadeResampleHz: v }),
     setAudioOutputDevice: (v) => set({ audioOutputDevice: v }),
   };
 }

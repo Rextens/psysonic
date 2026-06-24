@@ -4,8 +4,10 @@ import { AudioLines, RotateCcw } from 'lucide-react';
 import type { TFunction } from 'i18next';
 import CustomSelect from '../../CustomSelect';
 import SettingsSubSection from '../../SettingsSubSection';
+import { SettingsGroup } from '../SettingsGroup';
+import { SettingsToggle } from '../SettingsToggle';
 import { useAuthStore } from '../../../store/authStore';
-import { IS_MACOS } from '../../../utils/platform';
+import { useEqStore } from '../../../store/eqStore';
 import { buildAudioDeviceSelectOptions } from '../../../utils/audio/audioDeviceLabels';
 
 interface Props {
@@ -19,8 +21,9 @@ interface Props {
 }
 
 /**
- * Audio output device picker. macOS is hard-pinned to the system default,
- * so the picker collapses to a notice on that platform.
+ * Audio output device picker. Not rendered on macOS — the audio stream is
+ * pinned to the system default there, so the whole category is gated out by
+ * the caller (`AudioTab`).
  *
  * The device switch is best-effort: if `audio_set_device` rejects (e.g.
  * device disappeared) we leave the previous selection in the store.
@@ -36,6 +39,8 @@ export function AudioOutputDeviceSection({
 }: Props) {
   const audioOutputDevice = useAuthStore(s => s.audioOutputDevice);
   const setAudioOutputDevice = useAuthStore(s => s.setAudioOutputDevice);
+  const rememberEqPerDevice = useEqStore(s => s.rememberPerDevice);
+  const setRememberEqPerDevice = useEqStore(s => s.setRememberPerDevice);
 
   return (
     <SettingsSubSection
@@ -43,49 +48,52 @@ export function AudioOutputDeviceSection({
       icon={<AudioLines size={16} />}
     >
       <div className="settings-card">
-        {IS_MACOS ? (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55 }}>
-            {t('settings.audioOutputDeviceMacNotice')}
+        <SettingsGroup>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+            {t('settings.audioOutputDeviceDesc')}
           </div>
-        ) : (
-          <>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-              {t('settings.audioOutputDeviceDesc')}
-            </div>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <CustomSelect
-                style={{ flex: 1 }}
-                value={audioOutputDevice ?? ''}
-                disabled={deviceSwitching || devicesLoading}
-                onChange={async (val) => {
-                  const device = val || null;
-                  setDeviceSwitching(true);
-                  try {
-                    await invoke('audio_set_device', { deviceName: device });
-                    setAudioOutputDevice(device);
-                  } catch { /* device open failed — don't persist */ }
-                  setDeviceSwitching(false);
-                }}
-                options={buildAudioDeviceSelectOptions(
-                  audioDevices,
-                  t('settings.audioOutputDeviceDefault'),
-                  osDefaultAudioDeviceId,
-                  t('settings.audioOutputDeviceOsDefaultNow'),
-                  audioOutputDevice,
-                  t('settings.audioOutputDeviceNotInCurrentList'),
-                )}
-              />
-              <button
-                className="icon-btn"
-                onClick={() => refreshAudioDevices()}
-                disabled={devicesLoading || deviceSwitching}
-                data-tooltip={t('settings.audioOutputDeviceRefresh')}
-              >
-                <RotateCcw size={15} className={devicesLoading ? 'spin' : ''} />
-              </button>
-            </div>
-          </>
-        )}
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <CustomSelect
+              style={{ flex: 1 }}
+              value={audioOutputDevice ?? ''}
+              disabled={deviceSwitching || devicesLoading}
+              onChange={async (val) => {
+                const device = val || null;
+                setDeviceSwitching(true);
+                try {
+                  await invoke('audio_set_device', { deviceName: device });
+                  setAudioOutputDevice(device);
+                } catch { /* device open failed — don't persist */ }
+                setDeviceSwitching(false);
+              }}
+              options={buildAudioDeviceSelectOptions(
+                audioDevices,
+                t('settings.audioOutputDeviceDefault'),
+                osDefaultAudioDeviceId,
+                t('settings.audioOutputDeviceOsDefaultNow'),
+                audioOutputDevice,
+                t('settings.audioOutputDeviceNotInCurrentList'),
+              )}
+            />
+            <button
+              className="icon-btn"
+              onClick={() => refreshAudioDevices()}
+              disabled={devicesLoading || deviceSwitching}
+              data-tooltip={t('settings.audioOutputDeviceRefresh')}
+            >
+              <RotateCcw size={15} className={devicesLoading ? 'spin' : ''} />
+            </button>
+          </div>
+        </SettingsGroup>
+        <SettingsGroup>
+          <SettingsToggle
+            label={t('settings.audioOutputDeviceRememberEq')}
+            desc={t('settings.audioOutputDeviceRememberEqDesc')}
+            checked={rememberEqPerDevice}
+            onChange={setRememberEqPerDevice}
+            searchText={t('settings.audioOutputDeviceRememberEq')}
+          />
+        </SettingsGroup>
       </div>
     </SettingsSubSection>
   );

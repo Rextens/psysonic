@@ -204,6 +204,8 @@ mod tests {
             stream_playback_armed: Arc::new(AtomicBool::new(true)),
             crossfade_enabled: Arc::new(AtomicBool::new(false)),
             crossfade_secs: Arc::new(AtomicU32::new(0)),
+            autodj_suppress_autocrossfade: Arc::new(AtomicBool::new(false)),
+            interrupt_outgoing_duck_active: Arc::new(AtomicBool::new(false)),
             fading_out_sink: Arc::new(Mutex::new(None)),
             gapless_enabled: Arc::new(AtomicBool::new(false)),
             normalization_engine: Arc::new(AtomicU32::new(0)),

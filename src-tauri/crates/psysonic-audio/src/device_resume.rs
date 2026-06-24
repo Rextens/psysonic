@@ -161,6 +161,7 @@ pub(crate) async fn try_resume_after_device_change(
             done_flag: done_flag.clone(),
             fade_in_dur: std::time::Duration::from_millis(5),
             hi_res_enabled,
+            resample_target_hz: 0,
             duration_hint: snap.duration_secs,
         },
         &engine,
@@ -212,6 +213,7 @@ pub(crate) async fn try_resume_after_device_change(
             fadeout_samples: ps.built.fadeout_samples,
             crossfade_enabled: false,
             actual_fade_secs: 0.0,
+            outgoing_fade_secs: 0.0,
             start_paused: false,
         },
     );
@@ -261,6 +263,7 @@ pub(crate) async fn try_resume_after_device_change(
         engine.chained_info.clone(),
         engine.crossfade_enabled.clone(),
         engine.crossfade_secs.clone(),
+        engine.autodj_suppress_autocrossfade.clone(),
         done_flag,
         app.clone(),
         Some(analysis_app),

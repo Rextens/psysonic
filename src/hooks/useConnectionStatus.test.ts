@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { resetAuthStore } from '@/test/helpers/storeReset';
 import { useAuthStore } from '@/store/authStore';
@@ -9,6 +9,7 @@ import {
 
 vi.mock('@/api/subsonic', () => ({
   pingWithCredentials: vi.fn(),
+  pingWithCredentialsForProfile: vi.fn(),
   scheduleInstantMixProbeForServer: vi.fn(),
 }));
 
@@ -16,7 +17,7 @@ vi.mock('@/utils/perf/perfFlags', () => ({
   usePerfProbeFlags: () => ({ disableBackgroundPolling: false }),
 }));
 
-import { pingWithCredentials } from '@/api/subsonic';
+import { pingWithCredentialsForProfile } from '@/api/subsonic';
 import { useDevOfflineBrowseStore } from '@/store/devOfflineBrowseStore';
 import { useConnectionStatus } from './useConnectionStatus';
 
@@ -24,7 +25,11 @@ beforeEach(() => {
   resetAuthStore();
   invalidateReachableEndpointCache();
   useDevOfflineBrowseStore.getState().setForceOffline(false);
-  vi.mocked(pingWithCredentials).mockReset();
+  vi.mocked(pingWithCredentialsForProfile).mockReset();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 function seedDualAddressServer(): string {
@@ -45,7 +50,7 @@ describe('useConnectionStatus.isLan', () => {
     // LAN endpoint answers — alternateUrl is the LAN side here, so a
     // primary-url-only check would say "public". We assert it says "local"
     // (active endpoint kind).
-    vi.mocked(pingWithCredentials).mockImplementation(async url =>
+    vi.mocked(pingWithCredentialsForProfile).mockImplementation(async (_profile, url) =>
       url === 'http://192.168.0.10'
         ? { ok: true, type: 'navidrome', serverVersion: '0.55.0', openSubsonic: true }
         : { ok: false },
@@ -57,15 +62,21 @@ describe('useConnectionStatus.isLan', () => {
   });
 
   it('falls back to public when only the public address answers', async () => {
+    vi.useFakeTimers();
     seedDualAddressServer();
-    vi.mocked(pingWithCredentials).mockImplementation(async url =>
+    vi.mocked(pingWithCredentialsForProfile).mockImplementation(async (_profile, url) =>
       url === 'https://music.example.com'
         ? { ok: true, type: 'navidrome', serverVersion: '0.55.0', openSubsonic: true }
         : { ok: false },
     );
 
     const { result } = renderHook(() => useConnectionStatus());
-    await waitFor(() => expect(result.current.status).toBe('connected'));
+    await act(async () => {
+      for (let i = 0; i < 2; i++) {
+        await vi.advanceTimersByTimeAsync(2000);
+      }
+    });
+    expect(result.current.status).toBe('connected');
     // primary url is `https://music.example.com` — public. isLanUrl alone
     // would have said `false` for the wrong reason (because the primary
     // happens to be public); the test is meaningful because the LAN side
@@ -78,7 +89,7 @@ describe('useConnectionStatus.isLan', () => {
     seedDualAddressServer();
     // Don't resolve the ping — the hook is still in the `checking` state.
     let _resolve: ((v: PickReachableResult) => void) | null = null;
-    vi.mocked(pingWithCredentials).mockReturnValue(
+    vi.mocked(pingWithCredentialsForProfile).mockReturnValue(
       new Promise(r => {
         _resolve = ((res: PickReachableResult) => {
           if (res.ok) {
@@ -106,7 +117,7 @@ describe('useConnectionStatus online event', () => {
   it('flushes the reachable-endpoint cache when the browser fires online', async () => {
     seedDualAddressServer();
     // Initial probe: LAN answers.
-    vi.mocked(pingWithCredentials).mockImplementation(async url =>
+    vi.mocked(pingWithCredentialsForProfile).mockImplementation(async (_profile, url) =>
       url === 'http://192.168.0.10'
         ? { ok: true, type: 'navidrome', serverVersion: '0.55.0', openSubsonic: true }
         : { ok: false },
@@ -119,27 +130,32 @@ describe('useConnectionStatus online event', () => {
     // fire in this test; we trigger the online event instead. The handler
     // invalidates the sticky cache so the next probe goes LAN-first and
     // flips over to public when LAN refuses.
-    vi.mocked(pingWithCredentials).mockClear();
-    vi.mocked(pingWithCredentials).mockImplementation(async url =>
+    vi.mocked(pingWithCredentialsForProfile).mockClear();
+    vi.mocked(pingWithCredentialsForProfile).mockImplementation(async (_profile, url) =>
       url === 'https://music.example.com'
         ? { ok: true, type: 'navidrome', serverVersion: '0.55.0', openSubsonic: true }
         : { ok: false },
     );
 
+    vi.useFakeTimers();
     await act(async () => {
       window.dispatchEvent(new Event('online'));
+      for (let i = 0; i < 2; i++) {
+        await vi.advanceTimersByTimeAsync(2000);
+      }
     });
+    vi.useRealTimers();
 
     await waitFor(() => expect(result.current.isLan).toBe(false));
     // Both endpoints were probed (LAN refused, public answered).
-    expect(vi.mocked(pingWithCredentials).mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(vi.mocked(pingWithCredentialsForProfile).mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });
 
 describe('useConnectionStatus DEV offline toggle', () => {
   it('does not probe again on mount beyond the polling effect', async () => {
     seedDualAddressServer();
-    vi.mocked(pingWithCredentials).mockResolvedValue({
+    vi.mocked(pingWithCredentialsForProfile).mockResolvedValue({
       ok: true,
       type: 'navidrome',
       serverVersion: '0.55.0',
@@ -147,15 +163,15 @@ describe('useConnectionStatus DEV offline toggle', () => {
     });
 
     renderHook(() => useConnectionStatus());
-    await waitFor(() => expect(vi.mocked(pingWithCredentials).mock.calls.length).toBeGreaterThanOrEqual(1));
-    const callsAfterMount = vi.mocked(pingWithCredentials).mock.calls.length;
+    await waitFor(() => expect(vi.mocked(pingWithCredentialsForProfile).mock.calls.length).toBeGreaterThanOrEqual(1));
+    const callsAfterMount = vi.mocked(pingWithCredentialsForProfile).mock.calls.length;
     await new Promise(r => setTimeout(r, 20));
-    expect(vi.mocked(pingWithCredentials).mock.calls.length).toBe(callsAfterMount);
+    expect(vi.mocked(pingWithCredentialsForProfile).mock.calls.length).toBe(callsAfterMount);
   });
 
   it('disconnects on force-offline toggle without an extra probe', async () => {
     seedDualAddressServer();
-    vi.mocked(pingWithCredentials).mockResolvedValue({
+    vi.mocked(pingWithCredentialsForProfile).mockResolvedValue({
       ok: true,
       type: 'navidrome',
       serverVersion: '0.55.0',
@@ -164,10 +180,10 @@ describe('useConnectionStatus DEV offline toggle', () => {
 
     const { result } = renderHook(() => useConnectionStatus());
     await waitFor(() => expect(result.current.status).toBe('connected'));
-    const callsBeforeToggle = vi.mocked(pingWithCredentials).mock.calls.length;
+    const callsBeforeToggle = vi.mocked(pingWithCredentialsForProfile).mock.calls.length;
 
     act(() => useDevOfflineBrowseStore.getState().setForceOffline(true));
     await waitFor(() => expect(result.current.status).toBe('disconnected'));
-    expect(vi.mocked(pingWithCredentials).mock.calls.length).toBe(callsBeforeToggle);
+    expect(vi.mocked(pingWithCredentialsForProfile).mock.calls.length).toBe(callsBeforeToggle);
   });
 });

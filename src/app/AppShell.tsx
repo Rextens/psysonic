@@ -2,7 +2,6 @@ import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ensurePlaybackServerActive } from '../utils/playback/playbackServer';
 import { navigatePathWithAlbumReturnTo, shouldSkipMainScrollResetOnRouteChange } from '../utils/navigation/albumDetailNavigation';
-import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { PanelRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -59,6 +58,7 @@ import { useOfflineLibraryFilterSuspend } from '../hooks/useOfflineLibraryFilter
 import { AppShellQueueResizerSeam } from '../components/AppShellQueueResizerSeam';
 import { IS_LINUX } from '../utils/platform';
 import { useConnectionStatus } from '../hooks/useConnectionStatus';
+import { useIdlePlayQueuePull } from '../hooks/useIdlePlayQueuePull';
 import { useAuthStore } from '../store/authStore';
 import { usePlayerStore } from '../store/playerStore';
 import '../store/previewPlayerVolumeSync';
@@ -102,6 +102,7 @@ export function AppShell() {
   const currentTrack = usePlayerStore(s => s.currentTrack);
   const isPlaying = usePlayerStore(s => s.isPlaying);
   const { status: connStatus, isRetrying: connRetrying, retry: connRetry, isLan, serverName } = useConnectionStatus();
+  useIdlePlayQueuePull(connStatus);
   const navigate = useNavigate();
   const location = useLocation();
   const prevPathnameRef = useRef(location.pathname);
@@ -111,7 +112,6 @@ export function AppShell() {
   const useCustomTitlebar = useAuthStore(s => s.useCustomTitlebar);
   const offlineCtx = useOfflineBrowseContext();
   const offlineNav = offlineBrowseNavFlags(offlineCtx.capabilities);
-  const hasOfflineContent = offlineCtx.hasBrowsingContent;
   const hasOfflineBrowse = offlineCtx.hasBrowseCapability;
   const floatingPlayerBar = useThemeStore(s => s.floatingPlayerBar);
   const perfFlags = usePerfProbeFlags();
@@ -216,7 +216,6 @@ export function AppShell() {
 
   const {
     queueWidth,
-    isDraggingQueue,
     setIsDraggingQueue,
     queueHandleTop,
     handleQueueHandleMouseDown,

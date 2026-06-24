@@ -16,7 +16,7 @@ use super::analysis_dispatch::{
     dispatch_track_analysis_bytes, prepare_playback_analysis, spawn_track_analysis_file,
     TrackAnalysisOrigin,
 };
-use super::engine::{audio_http_client, AudioEngine};
+use super::engine::AudioEngine;
 use super::helpers::{analysis_cache_track_id, same_playback_target};
 use super::state::PreloadedTrack;
 
@@ -119,6 +119,7 @@ pub async fn audio_preload(
     duration_hint: f64,
     analysis_track_id: Option<String>,
     server_id: Option<String>,
+    eager: Option<bool>,
     app: AppHandle,
     state: State<'_, AudioEngine>,
 ) -> Result<(), String> {
@@ -183,15 +184,28 @@ pub async fn audio_preload(
 
     // Throttle: wait 8 s before starting the background download so it does not
     // compete with the decode + sink-feed work of the just-started current track.
-    // If the user skips during the wait the generation counter changes and we abort.
+    // Eager callers (crossfade/AutoDJ pre-buffer, fired ~30 s before the fade
+    // when the current track is long-settled) skip the wait so the RAM slot
+    // fills in time for the fade to fire. If the user skips during the wait the
+    // generation counter changes and we abort.
     let gen_snapshot = state.generation.load(Ordering::Relaxed);
-    tokio::time::sleep(Duration::from_secs(8)).await;
-    if state.generation.load(Ordering::Relaxed) != gen_snapshot {
-        emit_preload_cancelled(&app, url, track_id_for_events);
-        return Ok(());
+    if !eager.unwrap_or(false) {
+        tokio::time::sleep(Duration::from_secs(8)).await;
+        if state.generation.load(Ordering::Relaxed) != gen_snapshot {
+            emit_preload_cancelled(&app, url, track_id_for_events);
+            return Ok(());
+        }
     }
 
-    let response = audio_http_client(&state).get(&url).send().await.map_err(|e| e.to_string())?;
+    let response = crate::engine::playback_scoped_get(
+        &state,
+        &app,
+        &url,
+        server_id.as_deref(),
+    )
+    .send()
+    .await
+    .map_err(|e| e.to_string())?;
     if !response.status().is_success() {
         emit_preload_cancelled(&app, url, track_id_for_events);
         return Ok(());

@@ -1,3 +1,4 @@
+import type { HiResCrossfadeResampleHz } from '../utils/audio/hiResCrossfadeResample';
 import type { EntityRatingSupportLevel } from '../api/subsonicTypes';
 import type {
   AudiomusePluginProbeResult,
@@ -5,6 +6,23 @@ import type {
   SubsonicServerIdentity,
 } from '../utils/server/subsonicServerIdentity';
 import type { PersistedAccount } from '../music-network';
+
+export type CustomHeaderEntry = {
+  name: string;
+  value: string;
+};
+
+export type CustomHeadersApplyTo = 'local' | 'public' | 'both';
+
+export type CustomHeadersFieldError = {
+  index: number;
+  field: 'name' | 'value';
+  messageKey: string;
+};
+
+export type CustomHeadersValidationResult =
+  | { ok: true }
+  | { ok: false; fieldErrors: CustomHeadersFieldError[]; formMessage?: string };
 
 export interface ServerProfile {
   id: string;
@@ -30,6 +48,10 @@ export interface ServerProfile {
   shareUsesLocalUrl?: boolean;
   username: string;
   password: string;
+  /** Optional HTTP headers for reverse-proxy gates (Pangolin, Cloudflare Access). */
+  customHeaders?: CustomHeaderEntry[];
+  /** Which profile endpoint(s) receive `customHeaders`. Default when absent: `'public'`. */
+  customHeadersApplyTo?: CustomHeadersApplyTo;
 }
 
 export type SeekbarStyle = 'truewave' | 'pseudowave' | 'linedot' | 'bar' | 'thick' | 'segmented' | 'neon' | 'pulsewave' | 'particletrail' | 'liquidfill' | 'retrotape';
@@ -119,6 +141,23 @@ export interface AuthState {
   replayGainFallbackDb: number;  // gain for untagged files / radio (-6…0 dB)
   crossfadeEnabled: boolean;
   crossfadeSecs: number;
+  /**
+   * When crossfading, trim trailing silence of the outgoing track and leading
+   * silence of the incoming one so the fade overlaps music, not dead air.
+   * Default off — existing installs without this field keep today's behaviour.
+   */
+  crossfadeTrimSilence: boolean;
+  /**
+   * AutoDJ: fade out the outgoing track briefly on manual next/previous while
+   * playing (avoids an abrupt cut). Default on for new installs.
+   */
+  autodjSmoothSkip: boolean;
+  /**
+   * AutoDJ: upper bound for content-driven overlap. `auto` keeps the built-in
+   * 12 s cap; `limit` uses `autodjOverlapCapSec` (2–30 s, default 15).
+   */
+  autodjOverlapCapMode: 'auto' | 'limit';
+  autodjOverlapCapSec: number;
   gaplessEnabled: boolean;
   /** Show inline Play+Preview buttons in tracklists. Default on per Q3. Master kill switch — when off, all locations are off. */
   trackPreviewsEnabled: boolean;
@@ -210,6 +249,8 @@ export interface AuthState {
 
   /** Alpha: native hi-res sample rate output (disabled = safe 44.1 kHz mode) */
   enableHiRes: boolean;
+  /** Hi-Res: common output rate for crossfade / AutoDJ when adjacent tracks differ (Hz). */
+  hiResCrossfadeResampleHz: HiResCrossfadeResampleHz;
   /** Selected audio output device name. null = system default. */
   audioOutputDevice: string | null;
 
@@ -338,6 +379,10 @@ export interface AuthState {
   setReplayGainFallbackDb: (v: number) => void;
   setCrossfadeEnabled: (v: boolean) => void;
   setCrossfadeSecs: (v: number) => void;
+  setCrossfadeTrimSilence: (v: boolean) => void;
+  setAutodjSmoothSkip: (v: boolean) => void;
+  setAutodjOverlapCapMode: (v: 'auto' | 'limit') => void;
+  setAutodjOverlapCapSec: (v: number) => void;
   setGaplessEnabled: (v: boolean) => void;
   setTrackPreviewsEnabled: (v: boolean) => void;
   setTrackPreviewLocation: (location: TrackPreviewLocation, enabled: boolean) => void;
@@ -382,6 +427,7 @@ export interface AuthState {
   setQueueDurationDisplayMode: (v: DurationMode) => void;
   setQueueDisplayMode: (v: QueueDisplayMode) => void;
   setEnableHiRes: (v: boolean) => void;
+  setHiResCrossfadeResampleHz: (v: HiResCrossfadeResampleHz) => void;
   setAudioOutputDevice: (v: string | null) => void;
   setFavoritesOfflineEnabled: (v: boolean) => void;
   setHotCacheEnabled: (v: boolean) => void;

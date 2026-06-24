@@ -11,8 +11,9 @@ use rodio::Source;
 use tauri::{AppHandle, Emitter, State};
 
 use super::decode::build_source;
-use super::engine::{audio_http_client, AudioEngine};
+use super::engine::AudioEngine;
 use super::helpers::*;
+use super::hi_res_blend::{self, OutgoingBlendSnapshot};
 use super::ipc::{maybe_emit_normalization_state, NormalizationStatePayload};
 use super::play_input::{select_play_input, url_format_hint, PlayInputContext};
 use super::source_build::{build_playback_source_with_probe_fallback, BuildSourceArgs};
@@ -20,7 +21,7 @@ use super::sink_swap::{
     spawn_legacy_stream_start_when_armed, swap_in_new_sink, LegacyStreamStartWhenArmed,
     SinkSwapInputs,
 };
-use super::playback_rate::preserve_pitch_will_run;
+use super::playback_rate::{preserve_pitch_will_run, raw_counter_samples_for_content_position};
 use super::preview::preview_clear_for_new_main_playback;
 use super::progress_task::spawn_progress_task;
 use super::state::{ChainedInfo, PreloadedTrack};
@@ -51,16 +52,36 @@ pub async fn audio_play(
     fallback_db: f32,
     manual: bool, // true = user-initiated skip → bypass crossfade, start immediately
     hi_res_enabled: bool, // false = safe 44.1 kHz mode; true = native rate (alpha)
+  hi_res_crossfade_resample_hz: Option<u32>, // 44100 / 88200 / 96000 when hi-res + crossfade
     analysis_track_id: Option<String>,
     server_id: Option<String>,
     stream_format_suffix: Option<String>,
     // Silent load: no `audio:playing`, sink stays paused. Optional + defaults to
     // `false` so older/external `audio_play` callers that omit it still work.
     start_paused: Option<bool>,
+    // Silence-aware crossfade (B-head): begin playback past the next track's
+    // leading silence. Optional + defaults to `0` so existing callers are
+    // unaffected; only applied when the freshly built source is seekable.
+    start_secs: Option<f64>,
+    // Dynamic crossfade (phase 2): per-transition overlap length, computed by the
+    // frontend from both tracks' waveform envelopes. Caps the fade for *this*
+    // transition instead of the global `crossfade_secs`. `None` → use the global
+    // setting (today's behaviour); always still clamped to the measured remaining.
+    crossfade_secs_override: Option<f32>,
+    // Scenario A (dynamic crossfade): engine fade-out length for the *outgoing*
+    // track A, decoupled from B's fade-in. `Some(0)` → don't fade A at all (it
+    // already fades out in the recording, so let it ride at full engine gain
+    // while B rises underneath); `Some(x)` → fade A over x s; `None` → mirror
+    // B's fade (today's behaviour). Always clamped to A's measured remaining.
+    outgoing_fade_secs_override: Option<f32>,
+    // AutoDJ smooth skip: short outgoing fade when the user hits next/previous
+    // while a track is playing. Optional; only honoured when `manual` is true.
+    manual_autodj_blend: Option<bool>,
     app: AppHandle,
     state: State<'_, AudioEngine>,
 ) -> Result<(), String> {
     let start_paused = start_paused.unwrap_or(false);
+    let start_secs = start_secs.unwrap_or(0.0).max(0.0);
     let gapless = state.gapless_enabled.load(Ordering::Relaxed);
 
     // ── Ghost-command guard ───────────────────────────────────────────────────
@@ -220,9 +241,18 @@ pub async fn audio_play(
         },
     );
 
-    // Manual skips (user-initiated) bypass crossfade — the track should start immediately.
-    let crossfade_enabled = state.crossfade_enabled.load(Ordering::Relaxed) && !manual;
-    let crossfade_secs_val = f32::from_bits(state.crossfade_secs.load(Ordering::Relaxed)).clamp(0.5, 12.0);
+    // Manual skips bypass crossfade unless AutoDJ smooth skip requests a full blend.
+    let manual_blend = manual && manual_autodj_blend.unwrap_or(false);
+    let crossfade_enabled =
+        state.crossfade_enabled.load(Ordering::Relaxed) && (!manual || manual_blend);
+    // Per-transition override (dynamic crossfade) caps the fade for this swap;
+    // otherwise fall back to the global crossfade length. Both clamped the same.
+    let crossfade_secs_val = if let Some(override_secs) = crossfade_secs_override {
+        override_secs.clamp(0.5, 30.0)
+    } else {
+        f32::from_bits(state.crossfade_secs.load(Ordering::Relaxed))
+            .clamp(0.5, 12.0)
+    };
 
     // Measure how much audio Track A actually has left right now.
     // By the time audio_play is called, near_end_ticks (2×500ms) + IPC latency
@@ -247,6 +277,26 @@ pub async fn audio_play(
         Duration::from_millis(5)
     };
 
+    // Outgoing (Track A) fade-out, decoupled from B's fade-in. Defaults to
+    // `actual_fade_secs` (symmetric crossfade, today's behaviour); a `Some(0)`
+    // override means A already fades out in the recording, so we leave it at
+    // full engine gain (scenario A). Never longer than A's remaining audio.
+    let outgoing_fade_secs: f32 = if crossfade_enabled {
+        match outgoing_fade_secs_override {
+            Some(v) => v.max(0.0).min(actual_fade_secs),
+            None => actual_fade_secs,
+        }
+    } else {
+        0.0
+    };
+
+    let blend_rate = hi_res_blend::blend_rate_hz(
+        hi_res_enabled,
+        crossfade_enabled || (gapless && !manual),
+        hi_res_crossfade_resample_hz,
+    );
+    let resample_target_hz = blend_rate.unwrap_or(0);
+
     // Build source: decode → trim → resample → EQ → fade-in → fade-out → notify → count.
     let done_flag = Arc::new(AtomicBool::new(false));
     // Reset sample counter for the new track.
@@ -263,6 +313,7 @@ pub async fn audio_play(
             done_flag: done_flag.clone(),
             fade_in_dur,
             hi_res_enabled,
+            resample_target_hz,
             duration_hint,
         },
         &state,
@@ -286,8 +337,9 @@ pub async fn audio_play(
         e
     })?;
     state.current_is_seekable.store(playback_source.is_seekable, Ordering::SeqCst);
+    let source_seekable = playback_source.is_seekable;
     let built = playback_source.built;
-    let source = built.source;
+    let mut source = built.source;
     let duration_secs = built.duration_secs;
     let output_rate = built.output_rate;
     let output_channels = built.output_channels;
@@ -300,6 +352,26 @@ pub async fn audio_play(
         return Ok(());
     }
 
+    let current_stream_rate = state.stream_sample_rate.load(Ordering::Relaxed);
+    let outgoing_blend: Option<OutgoingBlendSnapshot> =
+        if let Some(blend) = blend_rate {
+            if crossfade_enabled && current_stream_rate > 0 && current_stream_rate != blend {
+                hi_res_blend::capture_outgoing_blend_snapshot(
+                    &state,
+                    outgoing_fade_secs,
+                    actual_fade_secs,
+                )
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+    if outgoing_blend.is_some() {
+        hi_res_blend::detach_current_sink_for_blend_reopen(&state);
+    }
+
     // ── Stream rate management ────────────────────────────────────────────────
     // Hi-Res ON:  open device at file's native rate (bit-perfect, no resampler).
     // Hi-Res OFF: if the stream was previously opened at a hi-res rate (e.g. the
@@ -308,11 +380,12 @@ pub async fn audio_play(
     //             If already at the device default — skip entirely (no IPC, no
     //             PipeWire reconfigure, no scheduler cost).
     {
-        let current_stream_rate = state.stream_sample_rate.load(Ordering::Relaxed);
-        let target_rate = if hi_res_enabled {
-            output_rate   // native file rate
+        let target_rate = if let Some(blend) = blend_rate {
+            blend
+        } else if hi_res_enabled {
+            output_rate // native file rate
         } else {
-            state.device_default_rate  // restore device default
+            state.device_default_rate // restore device default
         };
         let needs_switch = target_rate > 0 && target_rate != current_stream_rate;
         if needs_switch {
@@ -344,6 +417,23 @@ pub async fn audio_play(
         }
     }
 
+    if let (Some(snap), Some(blend)) = (&outgoing_blend, blend_rate) {
+        if let Err(e) = hi_res_blend::spawn_outgoing_blend_resample(
+            &app,
+            &state,
+            snap,
+            blend,
+            gen,
+        )
+        .await
+        {
+            crate::app_eprintln!("{e}");
+        }
+        if state.generation.load(Ordering::SeqCst) != gen {
+            return Ok(());
+        }
+    }
+
     let stream = super::engine::ensure_output_stream_open(&state)?;
     let sink = Arc::new(Player::connect_new(stream.mixer()));
     sink.set_volume(effective_volume);
@@ -360,7 +450,7 @@ pub async fn audio_play(
     // ring buffer time to build headroom before the cpal callback drains it.
     let needs_preserve_prefill = preserve_pitch_will_run(&state.playback_rate);
     let needs_prefill =
-        (hi_res_enabled && output_rate > 48_000) || needs_preserve_prefill;
+        (hi_res_enabled && blend_rate.unwrap_or(output_rate) > 48_000) || needs_preserve_prefill;
     let defer_playback_start = !state.stream_playback_armed.load(Ordering::Relaxed);
     if needs_prefill || defer_playback_start {
         sink.pause();
@@ -397,6 +487,17 @@ pub async fn audio_play(
         }
     }
 
+    // Silence-aware crossfade (B-head): skip the next track's leading silence by
+    // seeking the freshly built source before it is appended. The outermost
+    // `CountingSource` stores the sample counter on a successful seek; we still
+    // re-seed `samples_played` + `seek_offset` explicitly after the swap (below)
+    // so the seekbar and the crossfade-remaining math are content-relative.
+    let did_start_seek = if start_secs > 0.05 && source_seekable {
+        source.try_seek(Duration::from_secs_f64(start_secs)).is_ok()
+    } else {
+        false
+    };
+
     sink.append(source);
 
     if needs_prefill {
@@ -423,8 +524,28 @@ pub async fn audio_play(
         fadeout_samples: built.fadeout_samples,
         crossfade_enabled,
         actual_fade_secs,
+        outgoing_fade_secs,
         start_paused,
     });
+
+    // B-head: `swap_in_new_sink` resets `seek_offset` to 0 and starts the play
+    // clock — re-anchor both the wall-clock baseline (`seek_offset`) and the
+    // sample counter to the content offset so position reporting is correct.
+    if did_start_seek {
+        {
+            let mut cur = state.current.lock().unwrap();
+            cur.seek_offset = start_secs;
+        }
+        state.samples_played.store(
+            raw_counter_samples_for_content_position(
+                start_secs,
+                output_rate,
+                output_channels as u32,
+                &state.playback_rate,
+            ),
+            Ordering::Relaxed,
+        );
+    }
 
     if defer_playback_start {
         if !start_paused {
@@ -455,6 +576,7 @@ pub async fn audio_play(
         state.chained_info.clone(),
         state.crossfade_enabled.clone(),
         state.crossfade_secs.clone(),
+        state.autodj_suppress_autocrossfade.clone(),
         done_flag,
         app,
         Some(analysis_app),
@@ -491,6 +613,7 @@ pub async fn audio_chain_preload(
     pre_gain_db: f32,
     fallback_db: f32,
     hi_res_enabled: bool,
+    hi_res_crossfade_resample_hz: Option<u32>,
     analysis_track_id: Option<String>,
     server_id: Option<String>,
     app: AppHandle,
@@ -526,7 +649,14 @@ pub async fn audio_chain_preload(
         } else if let Some(path) = url.strip_prefix("psysonic-local://") {
             tokio::fs::read(path).await.map_err(|e| e.to_string())?
         } else {
-            let resp = audio_http_client(&state).get(&url).send().await
+            let resp = crate::engine::playback_scoped_get(
+                &state,
+                &app,
+                &url,
+                server_id.as_deref(),
+            )
+            .send()
+            .await
                 .map_err(|e| e.to_string())?;
             if !resp.status().is_success() {
                 return Ok(()); // silently fail — audio_play will retry
@@ -597,8 +727,9 @@ pub async fn audio_chain_preload(
     // Use a dedicated counter for the chained source — it will be swapped into
     // samples_played when the chained track becomes active.
     let chain_counter = Arc::new(AtomicU64::new(0));
-    // Always 0 — no application-level resampling (same as audio_play).
-    let target_rate: u32 = 0;
+    // Always 0 unless hi-res gapless blend resampling is active.
+    let blend_rate = hi_res_blend::blend_rate_hz(hi_res_enabled, hi_res_enabled, hi_res_crossfade_resample_hz);
+    let target_rate: u32 = blend_rate.unwrap_or(0);
     let format_hint = url.rsplit('.').next()
         .and_then(|ext| ext.split('?').next())
         .map(|s| s.to_lowercase());
@@ -624,23 +755,70 @@ pub async fn audio_chain_preload(
         return Ok(());
     }
 
-    // In hi-res mode: if the next track's native rate differs from the current
-    // output stream, we cannot chain gaplessly — audio_play will do a hard cut
-    // with a stream re-open. Store raw bytes to avoid re-downloading.
-    // In safe mode (44.1 kHz locked): the stream rate is always 44100, so the
-    // chain proceeds and rodio resamples internally — no bail needed.
-    let next_rate = if hi_res_enabled { built.output_rate } else { 44_100 };
+    // Hi-res gapless: resample the chained track to the blend rate and realign
+    // the output stream when its Hz differs from the current track.
     let stream_rate = state.stream_sample_rate.load(Ordering::Relaxed);
-    if hi_res_enabled && stream_rate > 0 && next_rate != stream_rate {
-        crate::app_eprintln!(
-            "[psysonic] gapless chain skipped: next track rate {} Hz ≠ stream {} Hz",
-            next_rate, stream_rate
-        );
-        *state.preloaded.lock().unwrap() = Some(PreloadedTrack {
-            url,
-            data: Arc::try_unwrap(raw_bytes).unwrap_or_else(|a| (*a).clone()),
-        });
-        return Ok(());
+    if let Some(br) = blend_rate {
+        if stream_rate > 0 && stream_rate != br {
+            if let Some(snap) = hi_res_blend::capture_outgoing_blend_snapshot(&state, 0.0, 0.0) {
+                hi_res_blend::detach_current_sink_for_blend_reopen(&state);
+                let dev = state.selected_device.lock().unwrap().clone();
+                if super::engine::open_output_stream_blocking(&state, br, true, dev).is_ok() {
+                    if hi_res_enabled && br > 48_000 {
+                        tokio::time::sleep(Duration::from_millis(150)).await;
+                    }
+                    if state.generation.load(Ordering::SeqCst) == snapshot_gen {
+                        if let Err(e) = hi_res_blend::rebuild_current_track_at_blend_rate(
+                            &app,
+                            &state,
+                            &snap,
+                            br,
+                            snapshot_gen,
+                        )
+                        .await
+                        {
+                            crate::app_eprintln!("{e}");
+                            *state.preloaded.lock().unwrap() = Some(PreloadedTrack {
+                                url: url.clone(),
+                                data: Arc::try_unwrap(raw_bytes).unwrap_or_else(|a| (*a).clone()),
+                            });
+                            return Ok(());
+                        }
+                    }
+                } else {
+                    crate::app_eprintln!(
+                        "[psysonic] gapless blend stream reopen failed (wanted {br} Hz, had {stream_rate} Hz)"
+                    );
+                    *state.preloaded.lock().unwrap() = Some(PreloadedTrack {
+                        url,
+                        data: Arc::try_unwrap(raw_bytes).unwrap_or_else(|a| (*a).clone()),
+                    });
+                    return Ok(());
+                }
+            } else {
+                crate::app_eprintln!(
+                    "[psysonic] gapless blend skipped: current track not cached for realign"
+                );
+                *state.preloaded.lock().unwrap() = Some(PreloadedTrack {
+                    url,
+                    data: Arc::try_unwrap(raw_bytes).unwrap_or_else(|a| (*a).clone()),
+                });
+                return Ok(());
+            }
+        }
+    } else {
+        let next_rate = if hi_res_enabled { built.output_rate } else { 44_100 };
+        if hi_res_enabled && stream_rate > 0 && next_rate != stream_rate {
+            crate::app_eprintln!(
+                "[psysonic] gapless chain skipped: next track rate {} Hz ≠ stream {} Hz",
+                next_rate, stream_rate
+            );
+            *state.preloaded.lock().unwrap() = Some(PreloadedTrack {
+                url,
+                data: Arc::try_unwrap(raw_bytes).unwrap_or_else(|a| (*a).clone()),
+            });
+            return Ok(());
+        }
     }
 
     // Append to the existing Sink. The audio hardware stream never stalls.

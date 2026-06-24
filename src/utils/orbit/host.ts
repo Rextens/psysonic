@@ -9,11 +9,13 @@ import {
   orbitOutboxPlaylistName,
   orbitSessionPlaylistName,
   ORBIT_DEFAULT_MAX_USERS,
+  ORBIT_DEFAULT_SETTINGS,
   type OrbitQueueItem,
   type OrbitSettings,
   type OrbitState,
 } from '../../api/orbit';
 import { generateSessionId } from './helpers';
+import { readOrbitTransitionSettings } from './transitions';
 import { writeOrbitHeartbeat, writeOrbitState } from './remote';
 
 export interface StartOrbitArgs {
@@ -74,6 +76,10 @@ export async function startOrbitSession(args: StartOrbitArgs): Promise<OrbitStat
       name: args.name,
       maxUsers: args.maxUsers ?? ORBIT_DEFAULT_MAX_USERS,
     });
+    // Seed the host's current track-transition prefs so a guest joining
+    // immediately adopts them from the very first blob; the host tick keeps
+    // them fresh thereafter.
+    state.settings = { ...(state.settings ?? ORBIT_DEFAULT_SETTINGS), transitions: readOrbitTransitionSettings() };
     await writeOrbitState(sessionPlaylistId, state);
     await writeOrbitHeartbeat(outboxPlaylistId, outboxName);
 
@@ -163,8 +169,13 @@ export async function triggerOrbitShuffleNow(): Promise<void> {
 export async function updateOrbitSettings(patch: Partial<OrbitSettings>): Promise<void> {
   const store = useOrbitStore.getState();
   if (store.role !== 'host' || !store.state || !store.sessionPlaylistId) return;
+  // Fall back to the canonical defaults (not a hand-rolled literal) for
+  // legacy sessions whose blob predates the settings field — otherwise
+  // patching one field on a settings-less session would silently flip
+  // autoApprove on, since the old literal had it true while
+  // ORBIT_DEFAULT_SETTINGS (the popover's source of truth) has it false.
   const mergedSettings: OrbitSettings = {
-    ...(store.state.settings ?? { autoApprove: true, autoShuffle: true }),
+    ...(store.state.settings ?? ORBIT_DEFAULT_SETTINGS),
     ...patch,
   };
   const next: OrbitState = { ...store.state, settings: mergedSettings };

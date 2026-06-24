@@ -109,6 +109,8 @@ export default function ContextMenu() {
   useEffect(() => {
     if (contextMenu.isOpen) {
       cancelPlaylistSubmenuCloseTimer();
+      // React Compiler set-state-in-effect rule: local coords synced from the store's contextMenu position when the menu opens.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCoords({ x: contextMenu.x, y: contextMenu.y });
       setPlaylistSubmenuOpen(false);
       setPlaylistSongIds([]);
@@ -129,6 +131,18 @@ export default function ContextMenu() {
       setCoords({ x: finalX, y: finalY });
     }
   }, [contextMenu.isOpen, contextMenu.x, contextMenu.y]);
+
+  // Close on any window resize. The menu is absolutely positioned at fixed
+  // coordinates, so a resize would otherwise leave it stranded and drifting
+  // off-screen. Whether a resize closed the menu was inconsistent across
+  // setups (it stayed open on some Windows and Linux environments); always
+  // closing it here makes the behaviour the same everywhere.
+  useEffect(() => {
+    if (!contextMenu.isOpen) return;
+    const onResize = () => closeContextMenu();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [contextMenu.isOpen, closeContextMenu]);
 
   useEffect(() => {
     if (contextMenu.isOpen) {

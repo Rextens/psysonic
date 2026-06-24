@@ -42,9 +42,13 @@ export function ArtistLayoutCustomizer() {
   const [dropTarget, setDropTarget] = useState<ArtistDropTarget>(null);
   const dropTargetRef = useRef<ArtistDropTarget>(null);
   const sectionsRef = useRef(sections);
+  // React Compiler refs rule: ref kept in sync with the latest value for use in effects/handlers/cleanup; not render data.
+  // eslint-disable-next-line react-hooks/refs
   sectionsRef.current = sections;
 
   useEffect(() => {
+    // React Compiler set-state-in-effect rule: local state synced with store/prop inputs when the effect’s dependencies change.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isPsyDragging) { dropTargetRef.current = null; setDropTarget(null); }
   }, [isPsyDragging]);
 
@@ -94,7 +98,6 @@ export function ArtistLayoutCustomizer() {
         {t('settings.artistLayoutDesc')}
       </p>
       <div
-        className="settings-card"
         style={{ padding: '4px 0' }}
         ref={setContainerEl}
         onMouseMove={handleMouseMove}

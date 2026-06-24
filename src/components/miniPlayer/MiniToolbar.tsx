@@ -1,9 +1,10 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { emit } from '@tauri-apps/api/event';
-import { Infinity as InfinityIcon, ListMusic, MoveRight, Shuffle, Volume2, VolumeX, Waves } from 'lucide-react';
+import { Blend, Infinity as InfinityIcon, ListMusic, MoveRight, Shuffle, Volume2, VolumeX, Waves } from 'lucide-react';
 import type { TFunction } from 'i18next';
 import type { MiniSyncPayload } from '../../utils/miniPlayerBridge';
+import { getTransitionMode } from '../../utils/playback/playbackTransition';
 
 interface Props {
   state: MiniSyncPayload;
@@ -15,6 +16,11 @@ interface Props {
   volumePopStyle: React.CSSProperties;
   handleVolumeChange: (v: number) => void;
   toggleMute: () => void;
+  crossfadeOpen: boolean;
+  setCrossfadeOpen: (updater: boolean | ((v: boolean) => boolean)) => void;
+  crossfadeBtnRef: React.RefObject<HTMLButtonElement | null>;
+  crossfadePopRef: React.RefObject<HTMLDivElement | null>;
+  crossfadePopStyle: React.CSSProperties;
   queueOpen: boolean;
   toggleQueue: () => void;
   t: TFunction;
@@ -22,8 +28,12 @@ interface Props {
 
 export function MiniToolbar({
   state, volume, volumeOpen, setVolumeOpen, volumeBtnRef, volumePopRef, volumePopStyle,
-  handleVolumeChange, toggleMute, queueOpen, toggleQueue, t,
+  handleVolumeChange, toggleMute,
+  crossfadeOpen, setCrossfadeOpen, crossfadeBtnRef, crossfadePopRef, crossfadePopStyle,
+  queueOpen, toggleQueue, t,
 }: Props) {
+  const mode = getTransitionMode(state);
+
   return (
     <div className="mini-player__toolbar" data-tauri-drag-region="false">
       <div className="mini-player__volume-wrap">
@@ -101,8 +111,8 @@ export function MiniToolbar({
 
       <button
         type="button"
-        className={`mini-player__tool${state.gaplessEnabled ? ' mini-player__tool--active' : ''}`}
-        onClick={() => emit('mini:set-gapless', { value: !state.gaplessEnabled }).catch(() => {})}
+        className={`mini-player__tool${mode === 'gapless' ? ' mini-player__tool--active' : ''}`}
+        onClick={() => emit('mini:set-transition-mode', { value: mode === 'gapless' ? 'none' : 'gapless' }).catch(() => {})}
         data-tauri-drag-region="false"
         data-tooltip={t('queue.gapless')}
         aria-label={t('queue.gapless')}
@@ -111,14 +121,55 @@ export function MiniToolbar({
       </button>
 
       <button
+        ref={crossfadeBtnRef}
         type="button"
-        className={`mini-player__tool${state.crossfadeEnabled ? ' mini-player__tool--active' : ''}`}
-        onClick={() => emit('mini:set-crossfade', { value: !state.crossfadeEnabled }).catch(() => {})}
+        className={`mini-player__tool${mode === 'crossfade' || crossfadeOpen ? ' mini-player__tool--active' : ''}`}
+        onClick={() => emit('mini:set-transition-mode', { value: mode === 'crossfade' ? 'none' : 'crossfade' }).catch(() => {})}
+        onContextMenu={(e) => { e.preventDefault(); setCrossfadeOpen(v => !v); }}
         data-tauri-drag-region="false"
         data-tooltip={t('queue.crossfade')}
         aria-label={t('queue.crossfade')}
       >
         <Waves size={13} />
+      </button>
+      {crossfadeOpen && createPortal(
+        <div
+          ref={crossfadePopRef}
+          className="mini-player__crossfade-popover"
+          style={crossfadePopStyle}
+          data-tauri-drag-region="false"
+        >
+          <div className="mini-player__crossfade-label">
+            <Waves size={11} />
+            {t('queue.crossfade')}
+            <span className="mini-player__crossfade-value">{(state.crossfadeSecs ?? 3).toFixed(1)} s</span>
+          </div>
+          <input
+            type="range"
+            min={0.1}
+            max={10}
+            step={0.1}
+            value={state.crossfadeSecs ?? 3}
+            onChange={e => {
+              emit('mini:set-crossfade-secs', { value: parseFloat(e.target.value) }).catch(() => {});
+              emit('mini:set-transition-mode', { value: 'crossfade' }).catch(() => {});
+            }}
+            className="mini-player__crossfade-slider"
+            aria-label={t('queue.crossfade')}
+          />
+        </div>,
+        document.body,
+      )}
+
+      <button
+        type="button"
+        className={`mini-player__tool${mode === 'autodj' ? ' mini-player__tool--active' : ''}`}
+        onClick={() => emit('mini:set-transition-mode', { value: mode === 'autodj' ? 'none' : 'autodj' }).catch(() => {})}
+        data-tauri-drag-region="false"
+        data-tooltip={t('queue.autoDj')}
+        aria-label={t('queue.autoDj')}
+      >
+        <Blend size={13} />
       </button>
 
       <button

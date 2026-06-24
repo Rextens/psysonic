@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { setIsAudioPaused } from './engineState';
 import type { PlayerState } from './playerStoreTypes';
 import { flushQueueSyncToServer } from './queueSync';
+import { markPlaybackIdle } from './queuePlaybackIdle';
 import { playListenSessionFinalize, playListenSessionOnPause } from './playListenSession';
 import { playbackReportPaused, playbackReportStopped } from './playbackReportSession';
 import { pauseRadio, stopRadio } from './radioPlayer';
@@ -11,6 +12,7 @@ import { clearSeekFallbackRetry } from './seekFallbackState';
 import { clearSeekTarget } from './seekTargetState';
 import { tryAcquireTogglePlayLock } from './togglePlayLock';
 import { refreshWaveformForTrack } from './waveformRefresh';
+import { clearAutodjTransitionUi } from './autodjTransitionUi';
 
 type SetState = (
   partial: Partial<PlayerState> | ((state: PlayerState) => Partial<PlayerState>),
@@ -32,6 +34,7 @@ export function createTransportLightActions(set: SetState, get: GetState): Pick<
   return {
     stop: () => {
       void playListenSessionFinalize('stop');
+      clearAutodjTransitionUi();
       // Report stopped before the position is reset below so the server drops the
       // now-playing entry at the right point (playbackReport extension).
       void playbackReportStopped();
@@ -68,6 +71,7 @@ export function createTransportLightActions(set: SetState, get: GetState): Pick<
       // Re-hydrate from the analysis DB in case the bins were never loaded or
       // only partially filled while the (now stopped) track was playing.
       if (keptTrackId) void refreshWaveformForTrack(keptTrackId);
+      markPlaybackIdle();
     },
 
     pause: () => {
@@ -87,6 +91,7 @@ export function createTransportLightActions(set: SetState, get: GetState): Pick<
         }
       }
       set({ isPlaying: false, scheduledPauseAtMs: null, scheduledPauseStartMs: null, scheduledResumeAtMs: null, scheduledResumeStartMs: null });
+      markPlaybackIdle();
     },
 
     resetAudioPause: () => {
@@ -96,7 +101,8 @@ export function createTransportLightActions(set: SetState, get: GetState): Pick<
     togglePlay: () => {
       if (!tryAcquireTogglePlayLock()) return;
       const { isPlaying } = get();
-      isPlaying ? get().pause() : get().resume();
+      if (isPlaying) get().pause();
+      else get().resume();
     },
   };
 }

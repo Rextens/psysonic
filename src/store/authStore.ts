@@ -20,6 +20,7 @@ import {
   DEFAULT_LIBRARY_GRID_MAX_COLUMNS,
 } from './authStoreDefaults';
 import { computeAuthStoreRehydration } from './authStoreRehydrate';
+import { syncAllServerHttpContexts } from '../utils/server/syncServerHttpContext';
 import type { AuthState } from './authStoreTypes';
 import { getCachedConnectBaseUrl } from '../utils/server/serverEndpoint';
 import { serverProfileBaseUrl } from '../utils/server/serverBaseUrl';
@@ -53,6 +54,10 @@ export const useAuthStore = create<AuthState>()(
       replayGainFallbackDb: 0,
       crossfadeEnabled: false,
       crossfadeSecs: 3,
+      crossfadeTrimSilence: false,
+      autodjSmoothSkip: true,
+      autodjOverlapCapMode: 'auto',
+      autodjOverlapCapSec: 15,
       gaplessEnabled: false,
       trackPreviewsEnabled: true,
       trackPreviewLocations: { ...DEFAULT_TRACK_PREVIEW_LOCATIONS },
@@ -97,6 +102,7 @@ export const useAuthStore = create<AuthState>()(
       queueDurationDisplayMode: 'total',
       queueDisplayMode: 'queue',
       enableHiRes: false,
+      hiResCrossfadeResampleHz: 44_100,
       audioOutputDevice: null,
       favoritesOfflineEnabled: false,
       hotCacheEnabled: false,
@@ -170,6 +176,7 @@ export const useAuthStore = create<AuthState>()(
       onRehydrateStorage: () => (state, error) => {
         if (error || !state) return;
         useAuthStore.setState(computeAuthStoreRehydration(state));
+        void syncAllServerHttpContexts(useAuthStore.getState().servers);
       },
     }
   )

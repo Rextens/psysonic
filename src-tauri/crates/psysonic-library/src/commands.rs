@@ -11,8 +11,9 @@ use rusqlite::params;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use psysonic_integration::navidrome::navidrome_token;
-use psysonic_integration::subsonic::SubsonicClient;
+use psysonic_core::server_http::ServerHttpRegistry;
+use psysonic_integration::navidrome::navidrome_token_with_registry;
+use psysonic_integration::subsonic::subsonic_client_with_registry;
 
 use crate::advanced_search;
 use crate::analysis_backfill::{self, LibraryAnalysisBackfillBatchDto, LibraryAnalysisProgressDto};
@@ -180,8 +181,8 @@ pub async fn library_get_status(
             conn.query_row(
                 "SELECT sync_phase, capability_flags, library_tier, last_full_sync_at, \
                  last_delta_sync_at, next_poll_at, server_last_scan_iso, \
-                 indexes_last_modified_ms, artists_last_modified_ms, local_track_count, \
-                 server_track_count, last_error \
+                 indexes_last_modified_ms, artists_last_modified_ms, ignored_articles, \
+                 local_track_count, server_track_count, last_error \
                  FROM sync_state WHERE server_id = ?1 AND library_scope = ?2",
                 params![server_id, scope],
                 |r| {
@@ -195,9 +196,10 @@ pub async fn library_get_status(
                         server_last_scan_iso: r.get(6)?,
                         indexes_last_modified_ms: r.get(7)?,
                         artists_last_modified_ms: r.get(8)?,
-                        local_track_count: r.get(9)?,
-                        server_track_count: r.get(10)?,
-                        last_error: r.get(11)?,
+                        ignored_articles: r.get(9)?,
+                        local_track_count: r.get(10)?,
+                        server_track_count: r.get(11)?,
+                        last_error: r.get(12)?,
                     })
                 },
             )
@@ -246,6 +248,7 @@ pub async fn library_get_status(
         server_last_scan_iso: row.server_last_scan_iso,
         indexes_last_modified_ms: row.indexes_last_modified_ms,
         artists_last_modified_ms: row.artists_last_modified_ms,
+        ignored_articles: row.ignored_articles,
         local_track_count,
         server_track_count: row.server_track_count,
         last_error: row.last_error,
@@ -622,6 +625,7 @@ struct SyncStateRow {
     server_last_scan_iso: Option<String>,
     indexes_last_modified_ms: Option<i64>,
     artists_last_modified_ms: Option<i64>,
+    ignored_articles: Option<String>,
     local_track_count: Option<i64>,
     server_track_count: Option<i64>,
     last_error: Option<String>,
@@ -654,13 +658,14 @@ fn normalize_base_url(raw: &str) -> String {
 /// caller falls back to a cached bearer / the Subsonic-only path. Never logs
 /// the token or credentials.
 async fn navidrome_token_with_retry(
+    registry: Option<&ServerHttpRegistry>,
     base_url: &str,
     username: &str,
     password: &str,
 ) -> Option<String> {
     const ATTEMPTS: u32 = 3;
     for attempt in 1..=ATTEMPTS {
-        match navidrome_token(base_url, username, password).await {
+        match navidrome_token_with_registry(registry, base_url, username, password).await {
             Ok(tok) => return Some(tok),
             Err(_) if attempt < ATTEMPTS => {
                 tokio::time::sleep(Duration::from_millis(250 * attempt as u64)).await;
@@ -674,6 +679,7 @@ async fn navidrome_token_with_retry(
 #[tauri::command]
 pub async fn library_sync_bind_session(
     runtime: State<'_, LibraryRuntime>,
+    http_registry: State<'_, Arc<ServerHttpRegistry>>,
     server_id: String,
     base_url: String,
     username: String,
@@ -687,8 +693,13 @@ pub async fn library_sync_bind_session(
     // keep a bearer cached from a prior bind rather than dropping to
     // Subsonic-only — a transient miss must not strip an N1-capable server
     // (R7-15 Q3). Non-Navidrome servers stay `None` and sync via Subsonic.
-    let navidrome_token_cached = match navidrome_token_with_retry(&base_url, &username, &password)
-        .await
+    let navidrome_token_cached = match navidrome_token_with_retry(
+        Some(http_registry.as_ref()),
+        &base_url,
+        &username,
+        &password,
+    )
+    .await
     {
         Some(tok) => Some(tok),
         None => runtime.get_session(&server_id).and_then(|s| s.navidrome_token),
@@ -706,7 +717,13 @@ pub async fn library_sync_bind_session(
 
     // Run the probe + persist capability flags. Failure to probe is a
     // bind-time error — caller should fix credentials / URL.
-    let subsonic = SubsonicClient::new(base_url, username, password);
+    let subsonic = subsonic_client_with_registry(
+        Some(http_registry.as_ref()),
+        &server_id,
+        base_url,
+        username,
+        password,
+    );
     let navidrome_creds = navidrome_token_cached.map(|tok| NavidromeProbeCredentials {
         server_url: subsonic_base_url_from(&runtime, &server_id),
         bearer_token: tok,
@@ -716,6 +733,7 @@ pub async fn library_sync_bind_session(
         &runtime.store,
         &subsonic,
         navidrome_creds.as_ref(),
+        Some(http_registry.as_ref()),
         &server_id,
         scope,
     )
@@ -869,8 +887,12 @@ async fn library_sync_start_inner(
     let job_id_for_task = job_id.clone();
     let parallelism = ParallelismBudget::resolve(runtime.current_playback_hint());
 
+    let app_for_runner = app.clone();
     let runner_handle: tokio::task::JoinHandle<Result<(), String>> = tokio::task::spawn(async move {
-        let subsonic = SubsonicClient::new(
+        let registry = app_for_runner.state::<Arc<ServerHttpRegistry>>();
+        let subsonic = subsonic_client_with_registry(
+            Some(registry.as_ref()),
+            &session_clone.server_id,
             session_clone.base_url.clone(),
             session_clone.username.clone(),
             session_clone.password.clone(),
@@ -892,7 +914,8 @@ async fn library_sync_start_inner(
             )
             .with_cancellation(Arc::clone(&cancel_for_task))
             .with_progress(Arc::clone(&progress))
-            .with_parallelism_budget(parallelism);
+            .with_parallelism_budget(parallelism)
+            .with_http_registry(Some(Arc::clone(&registry)));
             if let Some(creds) = navidrome_creds.clone() {
                 runner = runner.with_navidrome_credentials(creds);
             }
@@ -916,7 +939,8 @@ async fn library_sync_start_inner(
                 capability_flags,
             )
             .with_cancellation(Arc::clone(&cancel_for_task))
-            .with_progress(Arc::clone(&progress));
+            .with_progress(Arc::clone(&progress))
+            .with_http_registry(Some(Arc::clone(&registry)));
             if tombstone_budget > 0 {
                 runner = runner.with_tombstone_budget(tombstone_budget);
             }
@@ -1644,7 +1668,7 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let tok = navidrome_token_with_retry(&server.uri(), "user", "pw").await;
+        let tok = navidrome_token_with_retry(None, &server.uri(), "user", "pw").await;
         assert_eq!(tok.as_deref(), Some("nd-tok"));
     }
 
@@ -1661,7 +1685,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
             .mount(&server)
             .await;
-        let tok = navidrome_token_with_retry(&server.uri(), "user", "pw").await;
+        let tok = navidrome_token_with_retry(None, &server.uri(), "user", "pw").await;
         assert!(tok.is_none());
     }
 }

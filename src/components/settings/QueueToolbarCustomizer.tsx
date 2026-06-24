@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen, GripVertical, Infinity, MoveRight, Save, Share2, Shuffle, Trash2, Waves } from 'lucide-react';
+import { Blend, GripVertical, Infinity as InfinityIcon, ListMusic, MoveRight, Share2, Shuffle, Trash2, Waves } from 'lucide-react';
 import { useDragDrop, useDragSource } from '../../contexts/DragDropContext';
 import { useQueueToolbarStore, QueueToolbarButtonId } from '../../store/queueToolbarStore';
 
@@ -8,25 +8,25 @@ type QueueToolbarDropTarget = { idx: number; before: boolean } | null;
 
 const QUEUE_TOOLBAR_BUTTON_ICONS: Record<QueueToolbarButtonId, typeof Shuffle | null> = {
   shuffle: Shuffle,
-  save: Save,
-  load: FolderOpen,
+  playlist: ListMusic,
   share: Share2,
   clear: Trash2,
   separator: null, // No icon for separator
   gapless: MoveRight,
   crossfade: Waves,
-  infinite: Infinity,
+  autodj: Blend,
+  infinite: InfinityIcon,
 };
 
 const QUEUE_TOOLBAR_LABEL_KEYS: Record<QueueToolbarButtonId, string> = {
   shuffle:   'queue.shuffle',
-  save:      'queue.savePlaylist',
-  load:      'queue.loadPlaylist',
+  playlist:  'queue.playlist',
   share:     'queue.shareQueue',
   clear:     'queue.clear',
   separator: 'settings.queueToolbarSeparator',
   gapless:   'queue.gapless',
   crossfade: 'queue.crossfade',
+  autodj:    'queue.autoDj',
   infinite:  'queue.infiniteQueue',
 };
 
@@ -56,9 +56,13 @@ export function QueueToolbarCustomizer() {
   const [dropTarget, setDropTarget] = useState<QueueToolbarDropTarget>(null);
   const dropTargetRef = useRef<QueueToolbarDropTarget>(null);
   const buttonsRef = useRef(buttons);
+  // React Compiler refs rule: ref kept in sync with the latest value for use in effects/handlers/cleanup; not render data.
+  // eslint-disable-next-line react-hooks/refs
   buttonsRef.current = buttons;
 
   useEffect(() => {
+    // React Compiler set-state-in-effect rule: local state synced with store/prop inputs when the effect’s dependencies change.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isPsyDragging) { dropTargetRef.current = null; setDropTarget(null); }
   }, [isPsyDragging]);
 
@@ -104,7 +108,7 @@ export function QueueToolbarCustomizer() {
   };
 
   return (
-    <div ref={containerRef} onMouseMove={handleMouseMove} className="settings-card" style={{ padding: '4px 0' }}>
+    <div ref={containerRef} onMouseMove={handleMouseMove} style={{ padding: '4px 0' }}>
       {buttons.map((btn, idx) => {
         const Icon = QUEUE_TOOLBAR_BUTTON_ICONS[btn.id];
         const label = t(QUEUE_TOOLBAR_LABEL_KEYS[btn.id]);
@@ -124,7 +128,11 @@ export function QueueToolbarCustomizer() {
             {Icon ? (
               <Icon size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
             ) : (
-              <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', flexShrink: 0 }} />
+              // Reserve the same 16px icon column so the label lines up with the
+              // other rows; the 1px rule is centred within it.
+              <div style={{ width: 16, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: 1, height: 16, background: 'var(--border-subtle)' }} />
+              </div>
             )}
             <span style={{ flex: 1, fontSize: 14 }}>{label}</span>
             <label className="toggle-switch" aria-label={label}>
