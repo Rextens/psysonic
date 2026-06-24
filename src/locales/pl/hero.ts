@@ -1,9 +1,9 @@
 export const hero = {
-  eyebrow: 'Featured Album',
-  playAlbum: 'Play Album',
-  playAlbumTooltip: 'Play Album (hold to shuffle)',
-  enqueue: 'Enqueue',
-  enqueueTooltip: 'Add entire album to queue',
-  previousAlbum: 'Previous album',
-  nextAlbum: 'Next album',
+  eyebrow: 'Polecany album',
+  playAlbum: 'Odtwórz album',
+  playAlbumTooltip: 'Odtwórz album (przytrzymaj by przetasować)',
+  enqueue: 'Dodaj do kolejki',
+  enqueueTooltip: 'Dodaj cały album do kolejki',
+  previousAlbum: 'Poprzedni album',
+  nextAlbum: 'Następny album',
 };

@@ -1,4 +1,4 @@
 export const folderBrowser = {
-  empty: 'Empty folder',
-  error: 'Failed to load',
+  empty: 'Pusty folder',
+  error: 'Nie udało się załadować',
 };
