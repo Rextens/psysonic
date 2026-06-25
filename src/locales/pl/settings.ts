@@ -1,6 +1,6 @@
 export const settings = {
-  title: 'Settings',
-  language: 'Language',
+  title: 'Ustawienia',
+  language: 'Język',
   languageEn: 'English',
   languageDe: 'Deutsch',
   languageEs: 'Español',
@@ -14,7 +14,7 @@ export const settings = {
   languageHu: 'Magyar',
   languagePl: 'Polski',
   font: 'Czcionka',
-  fontHintOpenDyslexic: 'Dyslexia-friendly · no Chinese support',
+  fontHintOpenDyslexic: 'Przyjazna dla dyslektyków · brak obsługi chińskiego',
   theme: 'Motyw',
   appearance: 'Wygląd',
   servers: 'Serwery',
