@@ -126,7 +126,7 @@ export const orbit = {
   confirmLeaveBody: 'Wyjdź "{{name}}"? Możesz ponownie dołączyć za pomocą linku z zaproszeniem od {{host}}.',
   confirmLeaveConfirm: 'Wyjdź',
   confirmEndTitle: 'Zakończyć sesję dla wszystkich?',
-  confirmEndBody: '"{{name}}" zostanie zamknięta dla wszystkich użytkowników. Playlisty sesji zostaną automatycznie wyczyszcozne.',
+  confirmEndBody: '"{{name}}" zostanie zamknięta dla wszystkich użytkowników. Playlisty sesji zostaną automatycznie wyczyszczone.',
   confirmEndConfirm: 'Zakończ sesję',
   invalidLinkTitle: 'Link z zaproszeniem nie jest już ważny',
   invalidLinkBody: 'Ta sesja Orbit już nie istnieje lub została zakończona. Poproś gospodarza o świeży link z zaproszeniem.',
