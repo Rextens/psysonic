@@ -1,0 +1,16 @@
+export const tracks = {
+  title: 'Utwory',
+  subtitle: 'Przeglądaj. Szukaj. Odkrywaj.',
+  heroEyebrow: 'Utwór chwili',
+  heroReroll: 'Wybierz inny',
+  playSong: 'Odtwórz',
+  enqueueSong: 'Dodaj do kolejki',
+  toAlbum: 'Do albumu',
+  railRandom: 'Losowy wybór',
+  railHighlyRated: 'Wysoko oceniane',
+  browseTitle: 'Przeglądaj wszystkie utwory',
+  browseUnsupported: "Ten serwer nie udostępnia całej biblioteki naraz. Użyj wyszukiwania powyżej, aby znaleźć konkretne utwory.",
+  searchPlaceholder: 'Znajdź utwór po tytule, wykonawcy lub albumie…',
+  count_one: '{{count}} utwór',
+  count_other: '{{count}} utwory',
+};

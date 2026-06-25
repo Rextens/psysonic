@@ -1,0 +1,20 @@
+export const sharePaste = {
+  notLoggedIn: 'Zaloguj się i dodaj serwer, zanim wkleisz link udostępniania.',
+  noMatchingServer: 'Żaden zapisany serwer nie pasuje do tego linku. Dodać serwer o tym adresie: {{url}}?',
+  trackUnavailable: 'Nie znaleziono tego utworu na serwerze.',
+  albumUnavailable: 'Nie znaleziono tego albumu na serwerze.',
+  artistUnavailable: 'Nie znaleziono tego wykonawcy na serwerze.',
+  composerUnavailable: 'Nie znaleziono tego kompozytora na serwerze.',
+  openedTrack: 'Odtwarzanie udostępnionego utworu.',
+  openedAlbum: 'Otwieranie udostępnionego albumu.',
+  openedArtist: 'Otwieranie udostępnionego wykonawcy.',
+  openedComposer: 'Otwieranie udostępnionego kompozytora.',
+  openedQueue_one: 'Odtwarzanie {{count}} utworu z linku udostępniania.',
+  openedQueue_other: 'Odtwarzanie {{count}} utworów z linku udostępniania.',
+  openedQueuePartial:
+    'Odtwarzanie {{played}} z {{total}} utworów z linku ({{skipped}} nie znaleziono na serwerze).',
+  queueAllUnavailable: 'Żaden z utworów z linku nie został znaleziony na serwerze.',
+  playQueue: 'Odtwórz kolejki',
+  playQueueing: 'Rozpoczynanie odtwarzania…',
+  genericError: 'Nie można otworzyć linku udostępniania.',
+};

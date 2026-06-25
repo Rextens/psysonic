@@ -1,0 +1,15 @@
+export const genres = {
+  title: 'Gatunki',
+  genreCount: 'Gatunki',
+  albumCount_one: '{{count}} album',
+  albumCount_other: '{{count}} albumów',
+  loading: 'Ładowanie gatunków…',
+  empty: 'Nie znaleziono gatunków.',
+  albumsLoading: 'Ładowanie albumów…',
+  albumsEmpty: 'Nie znaleziono żadnego albumu dla tego gatunku.',
+  loadMore: 'Załaduj więcej',
+  back: 'Powrót',
+  playTooltip: 'Odtwórz (przytrzymaj by przetasować)',
+  shuffle: 'Przetasuj',
+  addToQueue: 'Dodaj do kolejki',
+};

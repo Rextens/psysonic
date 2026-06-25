@@ -310,6 +310,7 @@ export default function Login() {
               { value: 'ro', label: t('settings.languageRo') },
               { value: 'ja', label: t('settings.languageJa') },
               { value: 'hu', label: t('settings.languageHu') },
+              { value: 'pl', label: t('settings.languagePl') },
             ]}
           />
         </div>

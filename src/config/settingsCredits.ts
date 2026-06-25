@@ -413,6 +413,13 @@ const CONTRIBUTOR_ENTRIES = [
       'Japanese (ja) full UI translation (PR #1134)',
     ],
   },
+  {
+    github: 'Rextens',
+    since: '1.49.0',
+    contributions: [
+      'Polish (pl) full UI translation (PR #1185)',
+    ],
+  },
 ] as const;
 
 // PR number of a contributor's first listed contribution, used as the

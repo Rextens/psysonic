@@ -1,0 +1,15 @@
+export const migration = {
+  preparing: 'Przygotowywanie aktualizacji danych…',
+  preparingBody: 'Sprawdzanie biblioteki i pamięci podręcznej analizy…',
+  migrating: 'Migracja danych',
+  working: 'pracuję nad tym…',
+  skippedRows: 'Pominięto wiersze usuniętych serwerów, a stara zapasowa baza danych zostanie usunięta po pomyślnym przełączeniu.',
+  failed: 'Migracja nie powiodła się',
+  retry: 'Spróbuj ponownie',
+  copyDetails: 'Skopiuj szczegóły',
+  complete: 'Aktualizacja zakończona',
+  completeRows: 'Zmigrowano {{count}} wierszy',
+  genreTagsTitle: 'Aktualizowanie indeksu gatunków…',
+  genreTagsBody: 'Indeksowanie gatunków do przeglądania i filtrów. Uruchamia się jednorazowo po aktualizacji.',
+  genreTagsFailed: 'Aktualizacja indeksu gatunków nie powiodła się',
+};

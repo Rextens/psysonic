@@ -10,6 +10,7 @@ export const settings = {
   languageRu: 'Русский',
   languageZh: '中文',
   languageRo: 'Română',
+  languagePl: 'Polski',
   languageJa: '日本語',
   languageHu: 'Magyar',
   font: 'Fuente',

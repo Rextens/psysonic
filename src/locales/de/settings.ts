@@ -12,6 +12,7 @@ export const settings = {
   languageRo: 'Română',
   languageJa: '日本語',
   languageHu: 'Magyar',
+  languagePl: 'Polski',
   font: 'Schriftart',
   fontHintOpenDyslexic: 'Legasthenie-freundlich · keine Chinesisch-Unterstützung',
   theme: 'Design',
