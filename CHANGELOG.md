@@ -60,6 +60,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Psysonic is now available in **Hungarian (Magyar)** — pick it from the language menu on the Settings and Login screens.
 
+### Polish translation
+
+**By [@Rextens](https://github.com/Rextens), PR [#1185](https://github.com/Psychotoxical/psysonic/pull/1185)**
+
+* Full Polish (Polski) UI translation — selectable from the language picker on the Settings and Login screens.
+
 ### Artist artwork from fanart.tv
 
 **By [@Psychotoxical](https://github.com/Psychotoxical), PR [#1137](https://github.com/Psychotoxical/psysonic/pull/1137)**
