@@ -9,6 +9,8 @@ export const player = {
   prev: 'Poprzedni utwór',
   play: 'Odtwórz',
   pause: 'Wstrzymaj',
+  autoDjMixing: 'AutoDJ — miksowanie',
+  autoDjPreparing: 'AutoDJ — przygotowywanie następnego utworu',
   bufferingStream: 'Ładowanie utworu z serwera',
   previewActive: 'Odtwarzanie podglądu utworu',
   previewLabel: 'Podgląd utworu',

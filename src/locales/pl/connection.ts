@@ -35,4 +35,12 @@ export const connection = {
   switchServerHint: 'Kliknij, aby wybrać inny zapisany serwer.',
   manageServers: 'Zarządzaj serwerami…',
   switchFailed: 'Nie udało się przełączyć — serwer nieosiągalny.',
+  queueSynced: 'Kolejka jest zsynchronizowana z serwerem',
+  queuePullHint: 'Kliknij, aby pobrać kolejkę odtwarzania z {{server}}',
+  queueLocalEditHint: 'Kolejka odtwarzania została zmieniona lokalnie — automatyczna synchronizacja wstrzymana. Kliknij, aby pobrać ją z serwera.',
+  queuePulling: 'Pobieranie kolejki odtwarzania…',
+  queuePullSuccess: 'Kolejka odtwarzania została zaktualizowana z serwera',
+  queuePullEmpty: 'Kolejka odtwarzania na serwerze jest pusta',
+  queuePullFailed: 'Nie udało się pobrać kolejki odtwarzania z serwera',
+  queuePullAria: 'Synchronizuj kolejkę odtwarzania z serwera',
 };

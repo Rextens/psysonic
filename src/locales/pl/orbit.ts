@@ -143,6 +143,7 @@ export const orbit = {
   settingShuffleNow: 'Przetasuj teraz',
   toastSuggested: '{{user}} zaproponował "{{title}}"',
   toastSuggestedMany: '{{count}} nowych propozycji w kolejce',
+  toastSuggestLost: 'Twoja propozycja mogła nie dotrzeć do gospodarza',
   toastShuffled: 'Kolejka przetasowana',
   toastJoined: 'Dołącz do sesji',
   toastLoginFirst: 'Zaloguj się przed dołączeniem do sesji',

@@ -101,4 +101,22 @@ export const playlists = {
   csvImportToast: '{{added}} dodano, {{notFound}} nie znaleziono, {{duplicates}} duplikatów',
   csvImportDownloadSuccess: 'Raport pomyślnie pobrany',
   csvImportDownloadError: 'Nie udało się pobrać raportu',
+  // Playlist folders (local, per-server organisation layer)
+  folders: {
+    newFolder: 'Nowy folder',
+    namePlaceholder: 'Nazwa folderu…',
+    create: 'Utwórz',
+    rename: 'Zmień nazwę',
+    delete: 'Usuń folder',
+    ungrouped: 'Bez folderu',
+    moveToFolder: 'Przenieś do folderu',
+    removeFromFolder: 'Usuń z folderu',
+    expandFolder: 'Rozwiń folder',
+    collapseFolder: 'Zwiń folder',
+    groupByFolders: 'Grupuj po folderach',
+    count_one: '{{count}} playlista',
+    count_other: '{{count}} playlisty',
+    localOnlyNotice:
+        'Foldery są zapisywane tylko w PsySonic na tym urządzeniu. Navidrome i API Subsonic nie obsługują natywnie folderów playlist, więc ta struktura nie jest przechowywana na serwerze ani synchronizowana z innymi urządzeniami i aplikacjami.',
+  },
 };
